@@ -16,6 +16,11 @@ class LocationPoint(BaseModel):
     lng: float
 
 
+class RoutePoint(BaseModel):
+    lat: float
+    lng: float
+
+
 class CommuteCheckResponse(BaseModel):
     origin: LocationPoint
     destination: LocationPoint
@@ -23,7 +28,7 @@ class CommuteCheckResponse(BaseModel):
     delay_minutes: int
     delay_reason: str | None = None
     recommended_departure_time: str | None = None
-    route_polyline: str | None = None
+    route_polyline: list[RoutePoint] = []
 
 
 class CommuteRouteCreateRequest(BaseModel):

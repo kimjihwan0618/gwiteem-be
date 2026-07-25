@@ -125,12 +125,13 @@ async def get_price_history(stock_code: str, days: int = 7) -> list[float]:
     return closes
 
 
-async def get_rankings(market_country: str, count: int = 3) -> list[dict]:
+async def get_rankings(market_country: str, duration: str = "realtime", count: int = 5) -> list[dict]:
     """
     거래대금 상위 종목 랭킹 조회. market_country: "KR" | "US".
+    duration: "realtime" | "1d" | "1w" | "1mo" (토스증권 API 지원값)
     반환 예시: [{"symbol": "005930", "current_price": 71800, "change_rate": 1.25, "change_direction": "UP"}]
     """
-    cache_key = f"{_RANKING_CACHE_PREFIX}{market_country}:{count}"
+    cache_key = f"{_RANKING_CACHE_PREFIX}{market_country}:{duration}:{count}"
     cached = await redis_client.get(cache_key)
     if cached:
         items = []
@@ -150,7 +151,7 @@ async def get_rankings(market_country: str, count: int = 3) -> list[dict]:
     params = {
         "type": "MARKET_TRADING_AMOUNT",
         "marketCountry": market_country,
-        "duration": "realtime",
+        "duration": duration,
         "count": count,
     }
 

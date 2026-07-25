@@ -33,12 +33,27 @@ async def geocode(address: str) -> tuple[float, float]:
     return float(doc["y"]), float(doc["x"])  # (lat, lng)
 
 
+def _extract_route_path(route: dict) -> list[dict]:
+    """
+    응답의 sections[].roads[].vertexes(경도,위도가 번갈아 나열된 평탄 배열)를
+    지도 SDK에 바로 넘길 수 있는 [{"lat": ..., "lng": ...}, ...] 좌표 리스트로 변환.
+    """
+    points = []
+    for section in route.get("sections", []):
+        for road in section.get("roads", []):
+            vertexes = road.get("vertexes", [])
+            for i in range(0, len(vertexes) - 1, 2):
+                points.append({"lat": vertexes[i + 1], "lng": vertexes[i]})
+    return points
+
+
 async def get_directions(
     origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float
 ) -> dict:
     """
     자동차 기준 소요시간/경로 조회.
-    반환: {"estimated_minutes": 53, "delay_minutes": 0, "delay_reason": None, "route_polyline": None}
+    반환: {"estimated_minutes": 53, "delay_minutes": 0, "delay_reason": None,
+           "route_polyline": [{"lat": ..., "lng": ...}, ...]}
 
     카카오모빌리티 길찾기 API는 실시간 교통이 반영된 소요시간만 제공하고, "평소 대비 지연" 비교값이나
     사고/통제 사유는 별도로 주지 않는다. delay_minutes/delay_reason은 향후 별도 실시간 교통정보 API
@@ -65,5 +80,5 @@ async def get_directions(
         "estimated_minutes": round(duration_seconds / 60),
         "delay_minutes": 0,
         "delay_reason": None,
-        "route_polyline": None,
+        "route_polyline": _extract_route_path(route),
     }

@@ -49,8 +49,8 @@ class Settings(BaseSettings):
     # --- 외부 데이터 API ---
     NAVER_NEWS_API_CLIENT_ID: str = ""
     NAVER_NEWS_API_CLIENT_SECRET: str = ""
-    TOSS_SECURITIES_CLIENT_ID: str = "tsck_live_J0ecj0TLYCcdLgbzhIFDeL"  # 토스증권 Open API Client Id
-    TOSS_SECURITIES_CLIENT_SECRET: str = "tssk_live_c05Kb5GeU6ySSfeAXVa5VDk6Lavkxjf3eY2Q0PC4feyC"  # 토스증권 Open API Client Secret
+    TOSS_SECURITIES_CLIENT_ID: str = ""
+    TOSS_SECURITIES_CLIENT_SECRET: str = ""
     MAP_DIRECTIONS_API_KEY: str = ""
     WEATHER_API_KEY: str = ""
 

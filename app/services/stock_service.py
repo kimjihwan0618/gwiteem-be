@@ -8,6 +8,7 @@ from app.external import stock_price_client
 from app.repositories import interest_repo, news_repo, stock_repo
 
 _MARKET_COUNTRY = {"domestic": "KR", "overseas": "US"}
+_ALLOWED_DURATIONS = {"realtime", "1d", "1w", "1mo"}
 
 
 async def search_stocks(query: str, db: AsyncSession) -> list[dict]:
@@ -35,9 +36,10 @@ async def get_stock_with_price(code: str, db: AsyncSession) -> dict:
     }
 
 
-async def get_top_stocks(market: str) -> list[dict]:
+async def get_top_stocks(market: str, duration: str = "realtime") -> list[dict]:
     """
-    토스증권 거래대금 랭킹 API로 실시간 top3 조회. market: "domestic"(국내) | "overseas"(해외).
+    토스증권 거래대금 랭킹 API로 top5 조회. market: "domestic"(국내) | "overseas"(해외).
+    duration: "realtime"(실시간) | "1d"(일별) | "1w"(주별) | "1mo"(월별).
     종목명/시장구분은 로컬 stocks 테이블에 의존하지 않고 토스증권 API에서 바로 받아온다
     (비로그인 사용자가 별도 시딩 없이도 바로 조회 가능하도록).
     """
@@ -46,8 +48,12 @@ async def get_top_stocks(market: str) -> list[dict]:
         raise InvalidRequestException(
             message="market은 'domestic' 또는 'overseas'만 지원합니다.", code="INVALID_MARKET"
         )
+    if duration not in _ALLOWED_DURATIONS:
+        raise InvalidRequestException(
+            message="duration은 'realtime', '1d', '1w', '1mo'만 지원합니다.", code="INVALID_DURATION"
+        )
 
-    rankings = await stock_price_client.get_rankings(market_country, count=3)
+    rankings = await stock_price_client.get_rankings(market_country, duration=duration, count=5)
     if not rankings:
         return []
 
