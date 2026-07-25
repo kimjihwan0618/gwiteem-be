@@ -16,12 +16,9 @@ router = APIRouter(tags=["stock"])
 
 
 @router.get("/stocks/top", response_model=ApiResponse[list[StockDetailResponse]])
-async def get_top_stocks(
-    market: str = Query(default="domestic"),
-    db: AsyncSession = Depends(get_db),
-):
-    """비로그인 메인 화면용 인기 종목 top3. 인증: Public. 현재는 국내(domestic)만 지원."""
-    items = await stock_service.get_top_stocks(market, db)
+async def get_top_stocks(market: str = Query(default="domestic")):
+    """비로그인 메인 화면용 인기 종목 top3. 인증: Public. market: domestic(국내) | overseas(해외)."""
+    items = await stock_service.get_top_stocks(market)
     return ApiResponse(success=True, data=[StockDetailResponse(**item) for item in items])
 
 

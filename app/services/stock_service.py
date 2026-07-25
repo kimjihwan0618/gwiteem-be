@@ -3,10 +3,11 @@
 """
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.config import settings
-from app.core.exceptions import NotFoundException
+from app.core.exceptions import InvalidRequestException, NotFoundException
 from app.external import stock_price_client
 from app.repositories import interest_repo, news_repo, stock_repo
+
+_MARKET_COUNTRY = {"domestic": "KR", "overseas": "US"}
 
 
 async def search_stocks(query: str, db: AsyncSession) -> list[dict]:
@@ -34,22 +35,37 @@ async def get_stock_with_price(code: str, db: AsyncSession) -> dict:
     }
 
 
-async def get_top_stocks(market: str, db: AsyncSession) -> list[dict]:
-    """설정값(config.DEFAULT_TOP_STOCKS)에 고정된 종목들의 현재 시세 조회. market은 현재 'domestic'만 지원."""
+async def get_top_stocks(market: str) -> list[dict]:
+    """
+    토스증권 거래대금 랭킹 API로 실시간 top3 조회. market: "domestic"(국내) | "overseas"(해외).
+    종목명/시장구분은 로컬 stocks 테이블에 의존하지 않고 토스증권 API에서 바로 받아온다
+    (비로그인 사용자가 별도 시딩 없이도 바로 조회 가능하도록).
+    """
+    market_country = _MARKET_COUNTRY.get(market)
+    if not market_country:
+        raise InvalidRequestException(
+            message="market은 'domestic' 또는 'overseas'만 지원합니다.", code="INVALID_MARKET"
+        )
+
+    rankings = await stock_price_client.get_rankings(market_country, count=3)
+    if not rankings:
+        return []
+
+    stock_info = await stock_price_client.get_stock_info([r["symbol"] for r in rankings])
+
     items = []
-    for code in settings.DEFAULT_TOP_STOCKS:
-        stock = await stock_repo.get_by_code(code, db)
-        if not stock:
+    for r in rankings:
+        info = stock_info.get(r["symbol"])
+        if not info:
             continue
-        price = await stock_price_client.get_current_price(code)
         items.append(
             {
-                "code": stock.code,
-                "name": stock.name,
-                "market": stock.market,
-                "current_price": price["current_price"],
-                "change_rate": price["change_rate"],
-                "change_direction": price["change_direction"],
+                "code": r["symbol"],
+                "name": info["name"],
+                "market": info["market"],
+                "current_price": r["current_price"],
+                "change_rate": r["change_rate"],
+                "change_direction": r["change_direction"],
             }
         )
     return items

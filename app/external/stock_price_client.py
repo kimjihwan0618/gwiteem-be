@@ -1,30 +1,22 @@
 """
-증권 시세 조회 클라이언트 (한국투자증권 OpenAPI - 실전투자 기준).
-문서: https://apiportal.koreainvestment.com
+증권 시세 조회 클라이언트 (토스증권 Open API).
+문서: https://developers.tossinvest.com/docs
 
-- 토큰(OAuth2 client credentials)은 발급 후 Redis에 캐싱해 재사용 (기본 24시간 유효).
+- 토큰(OAuth2 client credentials)은 발급 후 Redis에 캐싱해 재사용.
 - 시세 자체도 Redis에 1분 TTL로 캐싱해 API 호출 한도를 아낀다.
+- /api/v1/prices 응답에는 전일대비 등락률/방향 필드가 없어(문서상 lastPrice만 보장됨),
+  /api/v1/candles의 전일 종가와 비교해 change_rate/change_direction을 직접 계산한다.
 """
-from datetime import datetime, timedelta
-
 import httpx
 
 from app.core.config import settings
 from app.core.redis import redis_client
 
-KIS_BASE_URL = "https://openapi.koreainvestment.com:9443"
-_TOKEN_CACHE_KEY = "kis:access_token"
-_PRICE_CACHE_PREFIX = "kis:price:"
-_HISTORY_CACHE_PREFIX = "kis:history:"
-
-# prdy_vrss_sign(전일대비부호) -> UP/DOWN/FLAT
-_CHANGE_DIRECTION = {
-    "1": "UP",  # 상한
-    "2": "UP",  # 상승
-    "3": "FLAT",  # 보합
-    "4": "DOWN",  # 하락
-    "5": "DOWN",  # 하한
-}
+TOSS_BASE_URL = "https://openapi.tossinvest.com"
+_TOKEN_CACHE_KEY = "toss:access_token"
+_PRICE_CACHE_PREFIX = "toss:price:"
+_HISTORY_CACHE_PREFIX = "toss:history:"
+_RANKING_CACHE_PREFIX = "toss:ranking:"
 
 
 async def _get_access_token() -> str:
@@ -34,11 +26,11 @@ async def _get_access_token() -> str:
 
     async with httpx.AsyncClient() as client:
         resp = await client.post(
-            f"{KIS_BASE_URL}/oauth2/tokenP",
-            json={
+            f"{TOSS_BASE_URL}/oauth2/token",
+            data={
                 "grant_type": "client_credentials",
-                "appkey": settings.STOCK_PRICE_API_KEY,
-                "appsecret": settings.STOCK_PRICE_API_SECRET,
+                "client_id": settings.TOSS_SECURITIES_CLIENT_ID,
+                "client_secret": settings.TOSS_SECURITIES_CLIENT_SECRET,
             },
             timeout=10.0,
         )
@@ -53,12 +45,23 @@ async def _get_access_token() -> str:
 
 async def _auth_headers() -> dict:
     token = await _get_access_token()
-    return {
-        "authorization": f"Bearer {token}",
-        "appkey": settings.STOCK_PRICE_API_KEY,
-        "appsecret": settings.STOCK_PRICE_API_SECRET,
-        "content-type": "application/json; charset=utf-8",
-    }
+    return {"Authorization": f"Bearer {token}"}
+
+
+async def _fetch_daily_candles(stock_code: str, count: int) -> list[dict]:
+    """최근 순(최신 -> 과거)으로 정렬된 일봉 캔들 리스트를 반환."""
+    headers = await _auth_headers()
+    params = {"symbol": stock_code, "interval": "1d", "count": count}
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{TOSS_BASE_URL}/api/v1/candles",
+            headers=headers,
+            params=params,
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        return resp.json()["candles"]
 
 
 async def get_current_price(stock_code: str) -> dict:
@@ -75,23 +78,31 @@ async def get_current_price(stock_code: str) -> dict:
         }
 
     headers = await _auth_headers()
-    headers["tr_id"] = "FHKST01010100"
-    params = {"fid_cond_mrkt_div_code": "J", "fid_input_iscd": stock_code}
-
     async with httpx.AsyncClient() as client:
         resp = await client.get(
-            f"{KIS_BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-price",
+            f"{TOSS_BASE_URL}/api/v1/prices",
             headers=headers,
-            params=params,
+            params={"symbols": stock_code},
             timeout=10.0,
         )
         resp.raise_for_status()
-        output = resp.json()["output"]
+        current_price = float(resp.json()["result"][0]["lastPrice"])
+
+    candles = await _fetch_daily_candles(stock_code, count=2)
+    prev_close = float(candles[1]["closePrice"]) if len(candles) > 1 else current_price
+
+    change_rate = round((current_price - prev_close) / prev_close * 100, 2) if prev_close else 0.0
+    if current_price > prev_close:
+        change_direction = "UP"
+    elif current_price < prev_close:
+        change_direction = "DOWN"
+    else:
+        change_direction = "FLAT"
 
     result = {
-        "current_price": float(output["stck_prpr"]),
-        "change_rate": float(output["prdy_ctrt"]),
-        "change_direction": _CHANGE_DIRECTION.get(output.get("prdy_vrss_sign", "3"), "FLAT"),
+        "current_price": current_price,
+        "change_rate": change_rate,
+        "change_direction": change_direction,
     }
 
     await redis_client.hset(cache_key, mapping=result)
@@ -106,32 +117,93 @@ async def get_price_history(stock_code: str, days: int = 7) -> list[float]:
     if cached:
         return [float(v) for v in cached.split(",")]
 
-    headers = await _auth_headers()
-    headers["tr_id"] = "FHKST03010100"
+    candles = await _fetch_daily_candles(stock_code, count=days)
+    closes = [float(c["closePrice"]) for c in candles[:days]]
+    closes.reverse()  # API가 최신순으로 내려주므로 오래된 순으로 뒤집음
 
-    end_date = datetime.now()
-    start_date = end_date - timedelta(days=days * 2)  # 주말/휴장일 감안해 여유있게 조회
+    await redis_client.set(cache_key, ",".join(str(c) for c in closes), ex=60)
+    return closes
+
+
+async def get_rankings(market_country: str, count: int = 3) -> list[dict]:
+    """
+    거래대금 상위 종목 랭킹 조회. market_country: "KR" | "US".
+    반환 예시: [{"symbol": "005930", "current_price": 71800, "change_rate": 1.25, "change_direction": "UP"}]
+    """
+    cache_key = f"{_RANKING_CACHE_PREFIX}{market_country}:{count}"
+    cached = await redis_client.get(cache_key)
+    if cached:
+        items = []
+        for entry in cached.split("|"):
+            symbol, price, rate, direction = entry.split(",")
+            items.append(
+                {
+                    "symbol": symbol,
+                    "current_price": float(price),
+                    "change_rate": float(rate),
+                    "change_direction": direction,
+                }
+            )
+        return items
+
+    headers = await _auth_headers()
     params = {
-        "fid_cond_mrkt_div_code": "J",
-        "fid_input_iscd": stock_code,
-        "fid_input_date_1": start_date.strftime("%Y%m%d"),
-        "fid_input_date_2": end_date.strftime("%Y%m%d"),
-        "fid_period_div_code": "D",
-        "fid_org_adj_prc": "1",
+        "type": "MARKET_TRADING_AMOUNT",
+        "marketCountry": market_country,
+        "duration": "realtime",
+        "count": count,
     }
 
     async with httpx.AsyncClient() as client:
         resp = await client.get(
-            f"{KIS_BASE_URL}/uapi/domestic-stock/v1/quotations/inquire-daily-itemchartprice",
+            f"{TOSS_BASE_URL}/api/v1/rankings",
             headers=headers,
             params=params,
             timeout=10.0,
         )
         resp.raise_for_status()
-        rows = resp.json()["output2"]
+        rankings = resp.json()["result"]["rankings"]
 
-    closes = [float(r["stck_clpr"]) for r in rows[:days]]
-    closes.reverse()  # API가 최신순으로 내려주므로 오래된 순으로 뒤집음
+    items = []
+    for entry in rankings:
+        change_rate = round(float(entry["price"]["changeRate"]) * 100, 2)
+        if change_rate > 0:
+            change_direction = "UP"
+        elif change_rate < 0:
+            change_direction = "DOWN"
+        else:
+            change_direction = "FLAT"
+        items.append(
+            {
+                "symbol": entry["symbol"],
+                "current_price": float(entry["price"]["lastPrice"]),
+                "change_rate": change_rate,
+                "change_direction": change_direction,
+            }
+        )
 
-    await redis_client.set(cache_key, ",".join(str(c) for c in closes), ex=60)
-    return closes
+    await redis_client.set(
+        cache_key,
+        "|".join(f"{i['symbol']},{i['current_price']},{i['change_rate']},{i['change_direction']}" for i in items),
+        ex=60,
+    )
+    return items
+
+
+async def get_stock_info(symbols: list[str]) -> dict[str, dict]:
+    """종목 심볼 -> {"name": 한글명, "market": 시장구분(KOSPI/KOSDAQ/NASDAQ 등)} 매핑."""
+    if not symbols:
+        return {}
+
+    headers = await _auth_headers()
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{TOSS_BASE_URL}/api/v1/stocks",
+            headers=headers,
+            params={"symbols": ",".join(symbols)},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        stocks = resp.json()["result"]
+
+    return {s["symbol"]: {"name": s["name"], "market": s["market"]} for s in stocks}
