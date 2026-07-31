@@ -7,6 +7,9 @@ import httpx
 from app.core.config import settings
 
 KAKAO_LOCAL_ADDRESS_URL = "https://dapi.kakao.com/v2/local/search/address.json"
+KAKAO_LOCAL_COORD_TO_ADDRESS_URL = (
+    "https://dapi.kakao.com/v2/local/geo/coord2address.json"
+)
 KAKAO_MOBILITY_DIRECTIONS_URL = "https://apis-navi.kakaomobility.com/v1/directions"
 
 
@@ -31,6 +34,31 @@ async def geocode(address: str) -> tuple[float, float]:
 
     doc = documents[0]
     return float(doc["y"]), float(doc["x"])  # (lat, lng)
+
+
+async def reverse_geocode(latitude: float, longitude: float) -> str | None:
+    """좌표를 사용자 표시용 도로명 주소로 변환한다."""
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            KAKAO_LOCAL_COORD_TO_ADDRESS_URL,
+            headers=_auth_headers(),
+            params={"x": longitude, "y": latitude},
+            timeout=10.0,
+        )
+        resp.raise_for_status()
+        documents = resp.json().get("documents", [])
+
+    if not documents:
+        return None
+
+    document = documents[0]
+    road_address = document.get("road_address")
+    address = document.get("address")
+    if road_address:
+        return road_address.get("address_name")
+    if address:
+        return address.get("address_name")
+    return None
 
 
 def _extract_route_path(route: dict) -> list[dict]:

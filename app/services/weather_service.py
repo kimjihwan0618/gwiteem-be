@@ -1,11 +1,13 @@
 """
 날씨 조회 비즈니스 로직.
 """
+import asyncio
+
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.core.exceptions import ForbiddenException, InvalidRequestException, NotFoundException
-from app.external import weather_client
+from app.external import map_directions_client, weather_client
 from app.repositories import weather_repo
 
 MAX_FAVORITES = 3
@@ -19,11 +21,21 @@ async def get_weather(lat: float | None, lng: float | None) -> dict:
     latitude = lat if lat is not None else settings.DEFAULT_WEATHER_LAT
     longitude = lng if lng is not None else settings.DEFAULT_WEATHER_LNG
 
-    weather = await weather_client.get_current_weather(latitude, longitude)
+    weather_result, forecast_result, address_result = await asyncio.gather(
+        weather_client.get_current_weather(latitude, longitude),
+        weather_client.get_hourly_forecast(latitude, longitude),
+        map_directions_client.reverse_geocode(latitude, longitude),
+        return_exceptions=True,
+    )
+    if isinstance(weather_result, BaseException):
+        raise weather_result
+    address = None if isinstance(address_result, BaseException) else address_result
+    hourly = [] if isinstance(forecast_result, BaseException) else forecast_result
 
     return {
-        "location": {"label": None, "lat": latitude, "lng": longitude},
-        "weather": weather,
+        "location": {"label": address, "lat": latitude, "lng": longitude},
+        "weather": weather_result,
+        "hourly": hourly,
     }
 
 

@@ -15,6 +15,15 @@ class RelatedIssueBrief(BaseModel):
     title: str
 
 
+class StockChartPoint(BaseModel):
+    timestamp: str
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+
+
 class StockDetailResponse(BaseModel):
     code: str
     name: str
@@ -22,6 +31,7 @@ class StockDetailResponse(BaseModel):
     change_rate: float
     change_direction: str  # UP / DOWN / FLAT
     price_history_7d: list[float] = []
+    price_chart: list[StockChartPoint] = []
     related_issues: list[RelatedIssueBrief] = []
 
 

@@ -7,6 +7,9 @@
 - /api/v1/prices 응답에는 전일대비 등락률/방향 필드가 없어(문서상 lastPrice만 보장됨),
   /api/v1/candles의 전일 종가와 비교해 change_rate/change_direction을 직접 계산한다.
 """
+import asyncio
+import json
+
 import httpx
 
 from app.core.config import settings
@@ -16,6 +19,7 @@ TOSS_BASE_URL = "https://openapi.tossinvest.com"
 _TOKEN_CACHE_KEY = "toss:access_token"
 _PRICE_CACHE_PREFIX = "toss:price:"
 _HISTORY_CACHE_PREFIX = "toss:history:"
+_CHART_CACHE_PREFIX = "toss:chart:"
 _RANKING_CACHE_PREFIX = "toss:ranking:"
 
 
@@ -48,20 +52,48 @@ async def _auth_headers() -> dict:
     return {"Authorization": f"Bearer {token}"}
 
 
-async def _fetch_daily_candles(stock_code: str, count: int) -> list[dict]:
-    """최근 순(최신 -> 과거)으로 정렬된 일봉 캔들 리스트를 반환."""
+async def _fetch_candles(stock_code: str, interval: str, count: int) -> list[dict]:
+    """최근 순(최신 -> 과거)으로 정렬된 캔들 리스트를 반환."""
     headers = await _auth_headers()
-    params = {"symbol": stock_code, "interval": "1d", "count": count}
+    candles: list[dict] = []
+    seen_timestamps: set[str] = set()
+    before: str | None = None
 
     async with httpx.AsyncClient() as client:
-        resp = await client.get(
-            f"{TOSS_BASE_URL}/api/v1/candles",
-            headers=headers,
-            params=params,
-            timeout=10.0,
-        )
-        resp.raise_for_status()
-        return resp.json()["candles"]
+        while len(candles) < count:
+            params = {
+                "symbol": stock_code,
+                "interval": interval,
+                "count": min(count - len(candles), 200),
+            }
+            if before:
+                params["before"] = before
+
+            resp = await client.get(
+                f"{TOSS_BASE_URL}/api/v1/candles",
+                headers=headers,
+                params=params,
+                timeout=10.0,
+            )
+            resp.raise_for_status()
+            result = resp.json()["result"]
+            page = result["candles"]
+            for candle in page:
+                timestamp = candle["timestamp"]
+                if timestamp not in seen_timestamps:
+                    seen_timestamps.add(timestamp)
+                    candles.append(candle)
+            before = result.get("nextBefore")
+            if not before or not page:
+                break
+            await asyncio.sleep(0.22)
+
+    return candles[:count]
+
+
+async def _fetch_daily_candles(stock_code: str, count: int) -> list[dict]:
+    """최근 순(최신 -> 과거)으로 정렬된 일봉 캔들 리스트를 반환."""
+    return await _fetch_candles(stock_code, interval="1d", count=count)
 
 
 async def get_current_price(stock_code: str) -> dict:
@@ -123,6 +155,30 @@ async def get_price_history(stock_code: str, days: int = 7) -> list[float]:
 
     await redis_client.set(cache_key, ",".join(str(c) for c in closes), ex=60)
     return closes
+
+
+async def get_price_chart(stock_code: str, interval: str, count: int) -> list[dict]:
+    """차트 표시용 OHLCV 캔들을 오래된 시각부터 반환."""
+    cache_key = f"{_CHART_CACHE_PREFIX}{stock_code}:{interval}:{count}"
+    cached = await redis_client.get(cache_key)
+    if cached:
+        return json.loads(cached)
+
+    candles = await _fetch_candles(stock_code, interval=interval, count=count)
+    points = [
+        {
+            "timestamp": candle["timestamp"],
+            "open": float(candle["openPrice"]),
+            "high": float(candle["highPrice"]),
+            "low": float(candle["lowPrice"]),
+            "close": float(candle["closePrice"]),
+            "volume": float(candle["volume"]),
+        }
+        for candle in reversed(candles[:count])
+    ]
+
+    await redis_client.set(cache_key, json.dumps(points), ex=60)
+    return points
 
 
 async def get_rankings(market_country: str, duration: str = "realtime", count: int = 5) -> list[dict]:
