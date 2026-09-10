@@ -74,7 +74,10 @@ async def get_favorites_weather(user_id: int, db: AsyncSession) -> list[dict]:
 
     items = []
     for favorite in favorites:
-        weather = await weather_client.get_current_weather(favorite.latitude, favorite.longitude)
+        weather, hourly = await asyncio.gather(
+            weather_client.get_current_weather(favorite.latitude, favorite.longitude),
+            weather_client.get_hourly_forecast(favorite.latitude, favorite.longitude),
+        )
         items.append(
             {
                 "favorite": {
@@ -84,6 +87,7 @@ async def get_favorites_weather(user_id: int, db: AsyncSession) -> list[dict]:
                     "longitude": favorite.longitude,
                 },
                 "weather": weather,
+                "hourly": hourly,
             }
         )
     return items

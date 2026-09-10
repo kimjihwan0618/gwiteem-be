@@ -35,3 +35,4 @@ class WeatherFavoriteResponse(BaseModel):
 class FavoriteWeatherItem(BaseModel):
     favorite: WeatherFavoriteResponse
     weather: WeatherInfo
+    hourly: list[HourlyWeather] = Field(default_factory=list)

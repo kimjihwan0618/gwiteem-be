@@ -136,7 +136,7 @@ async def get_current_weather(latitude: float, longitude: float) -> dict:
 
 
 async def get_hourly_forecast(latitude: float, longitude: float) -> list[dict]:
-    """현재 시각 이후 단기 시간대별 예보를 최대 8개 반환한다."""
+    """현재 시각 이후 단기 시간대별 예보를 최대 24개 반환한다."""
     nx, ny = _latlng_to_grid(latitude, longitude)
     base_date, base_time = _latest_forecast_base_datetime()
     params = {
@@ -179,4 +179,4 @@ async def get_hourly_forecast(latitude: float, longitude: float) -> list[dict]:
                 "condition": _forecast_condition(values),
             }
         )
-    return forecasts[:8]
+    return forecasts[:24]
