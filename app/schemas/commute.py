@@ -77,3 +77,4 @@ class CommuteEstimate(BaseModel):
 class FavoriteCommuteItem(BaseModel):
     favorite: CommuteFavoriteResponse
     commute: CommuteEstimate
+    route_polyline: list[RoutePoint] = []

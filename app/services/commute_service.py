@@ -220,6 +220,7 @@ async def get_favorites_commute(user_id: int, db: AsyncSession) -> list[dict]:
                     "delay_minutes": directions["delay_minutes"],
                     "delay_reason": directions["delay_reason"],
                 },
+                "route_polyline": directions["route_polyline"],
             }
         )
     return items
