@@ -206,3 +206,41 @@ async def delete_commute_favorite(
     """즐겨찾기 경로 삭제. 인증: Required."""
     await commute_service.remove_favorite(favorite_id, current_user.id, db)
     return ApiResponse(success=True, data=None)
+
+
+@router.put(
+    "/users/me/commute-favorites/{favorite_id}",
+    response_model=ApiResponse[CommuteFavoriteResponse],
+)
+async def update_commute_favorite(
+    favorite_id: int,
+    body: CommuteFavoriteCreateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """즐겨찾기 출발지-목적지 경로 수정. 인증: Required."""
+    favorite = await commute_service.update_favorite(
+        favorite_id,
+        current_user.id,
+        body.label,
+        body.origin_address,
+        body.origin_lat,
+        body.origin_lng,
+        body.destination_address,
+        body.destination_lat,
+        body.destination_lng,
+        db,
+    )
+    return ApiResponse(
+        success=True,
+        data=CommuteFavoriteResponse(
+            id=favorite.id,
+            label=favorite.label,
+            origin_address=favorite.origin_address,
+            origin_lat=favorite.origin_lat,
+            origin_lng=favorite.origin_lng,
+            destination_address=favorite.destination_address,
+            destination_lat=favorite.destination_lat,
+            destination_lng=favorite.destination_lng,
+        ),
+    )

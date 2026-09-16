@@ -160,6 +160,39 @@ async def remove_favorite(favorite_id: int, user_id: int, db: AsyncSession) -> N
     await db.commit()
 
 
+async def update_favorite(
+    favorite_id: int,
+    user_id: int,
+    label: str,
+    origin_address: str,
+    origin_lat: float,
+    origin_lng: float,
+    destination_address: str,
+    destination_lat: float,
+    destination_lng: float,
+    db: AsyncSession,
+):
+    favorite = await commute_repo.get_favorite(favorite_id, db)
+    if not favorite:
+        raise NotFoundException("즐겨찾기를 찾을 수 없습니다.")
+    if favorite.user_id != user_id:
+        raise ForbiddenException()
+    favorite = await commute_repo.update_favorite(
+        favorite,
+        label,
+        origin_address,
+        origin_lat,
+        origin_lng,
+        destination_address,
+        destination_lat,
+        destination_lng,
+        db,
+    )
+    await db.commit()
+    await db.refresh(favorite)
+    return favorite
+
+
 async def get_favorites_commute(user_id: int, db: AsyncSession) -> list[dict]:
     """즐겨찾기 경로들의 현재 소요시간을 각각 조회. 로그 저장은 하지 않는다(main.py 새로고침 시 매번 쌓이지 않도록)."""
     favorites = await commute_repo.list_favorites(user_id, db)

@@ -48,7 +48,27 @@ async def _get_price_chart_safely(
 
 async def search_stocks(query: str, db: AsyncSession) -> list[dict]:
     stocks = await stock_repo.search_by_name(query, db)
-    return [{"code": s.code, "name": s.name, "market": s.market} for s in stocks]
+    results = {s.code: {"code": s.code, "name": s.name, "market": s.market} for s in stocks}
+    normalized_query = query.strip().casefold()
+
+    try:
+        rankings = await asyncio.gather(
+            stock_price_client.get_rankings("KR", duration="1d", count=50),
+            stock_price_client.get_rankings("US", duration="1d", count=50),
+        )
+        symbols = [item["symbol"] for market_items in rankings for item in market_items]
+        stock_info = await stock_price_client.get_stock_info(symbols)
+        for symbol, info in stock_info.items():
+            if normalized_query in symbol.casefold() or normalized_query in info["name"].casefold():
+                results[symbol] = {
+                    "code": symbol,
+                    "name": info["name"],
+                    "market": info["market"],
+                }
+    except Exception:
+        logger.warning("외부 종목 검색 후보 조회 실패: query=%s", query, exc_info=True)
+
+    return list(results.values())[:10]
 
 
 async def get_stock_with_price(code: str, db: AsyncSession) -> dict:
@@ -137,15 +157,30 @@ async def get_watchlist_market_impact(user_id: int, db: AsyncSession) -> list[di
     items = []
     for code in stock_codes:
         stock = await stock_repo.get_by_code(code, db)
-        if not stock:
-            continue
+        if stock:
+            stock_name = stock.name
+            stock_market = stock.market
+        else:
+            try:
+                info = (await stock_price_client.get_stock_info([code])).get(code)
+            except Exception:
+                logger.warning("관심 종목 메타데이터 조회 실패: code=%s", code, exc_info=True)
+                continue
+            if not info:
+                continue
+            stock_name = info["name"]
+            stock_market = info["market"]
         price = await stock_price_client.get_current_price(code)
         history = await stock_price_client.get_price_history(code, days=7)
-        issues = await news_repo.get_issues_by_stock_code(code, cursor_id=None, limit=1, db=db)
+        issues = (
+            await news_repo.get_issues_by_stock_code(code, cursor_id=None, limit=1, db=db)
+            if stock
+            else []
+        )
 
         items.append(
             {
-                "stock": {"code": stock.code, "name": stock.name, "market": stock.market},
+                "stock": {"code": code, "name": stock_name, "market": stock_market},
                 "related_issue_summary": issues[0].summary if issues else None,
                 "current_price": price["current_price"],
                 "change_rate": price["change_rate"],

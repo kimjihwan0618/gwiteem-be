@@ -102,5 +102,27 @@ async def create_favorite(
     return favorite
 
 
+async def update_favorite(
+    favorite: CommuteFavorite,
+    label: str,
+    origin_address: str,
+    origin_lat: float,
+    origin_lng: float,
+    destination_address: str,
+    destination_lat: float,
+    destination_lng: float,
+    db: AsyncSession,
+) -> CommuteFavorite:
+    favorite.label = label
+    favorite.origin_address = origin_address
+    favorite.origin_lat = origin_lat
+    favorite.origin_lng = origin_lng
+    favorite.destination_address = destination_address
+    favorite.destination_lat = destination_lat
+    favorite.destination_lng = destination_lng
+    db.add(favorite)
+    return favorite
+
+
 async def delete_favorite(favorite_id: int, db: AsyncSession) -> None:
     await db.execute(delete(CommuteFavorite).where(CommuteFavorite.id == favorite_id))
