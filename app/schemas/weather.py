@@ -17,22 +17,3 @@ class WeatherResponse(BaseModel):
     location: LocationPoint
     weather: WeatherInfo
     hourly: list[HourlyWeather] = Field(default_factory=list)
-
-
-class WeatherFavoriteCreateRequest(BaseModel):
-    label: str
-    latitude: float
-    longitude: float
-
-
-class WeatherFavoriteResponse(BaseModel):
-    id: int
-    label: str
-    latitude: float
-    longitude: float
-
-
-class FavoriteWeatherItem(BaseModel):
-    favorite: WeatherFavoriteResponse
-    weather: WeatherInfo
-    hourly: list[HourlyWeather] = Field(default_factory=list)
