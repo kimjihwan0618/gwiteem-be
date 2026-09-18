@@ -42,3 +42,4 @@ class WatchlistImpactItem(BaseModel):
     change_rate: float
     change_direction: str
     sparkline_7d: list[float] = []
+    price_chart: list[StockChartPoint] = []

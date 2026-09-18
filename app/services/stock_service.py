@@ -172,6 +172,12 @@ async def get_watchlist_market_impact(user_id: int, db: AsyncSession) -> list[di
             stock_market = info["market"]
         price = await stock_price_client.get_current_price(code)
         history = await stock_price_client.get_price_history(code, days=7)
+        price_chart = await _get_price_chart_safely(
+            code,
+            interval="1m",
+            count=200,
+            semaphore=asyncio.Semaphore(1),
+        )
         issues = (
             await news_repo.get_issues_by_stock_code(code, cursor_id=None, limit=1, db=db)
             if stock
@@ -186,6 +192,7 @@ async def get_watchlist_market_impact(user_id: int, db: AsyncSession) -> list[di
                 "change_rate": price["change_rate"],
                 "change_direction": price["change_direction"],
                 "sparkline_7d": history,
+                "price_chart": price_chart,
             }
         )
     return items
