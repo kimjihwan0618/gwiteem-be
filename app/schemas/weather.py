@@ -3,8 +3,12 @@
 """
 from pydantic import BaseModel, Field
 
-from app.schemas.briefing import WeatherInfo
 from app.schemas.commute import LocationPoint
+
+
+class WeatherInfo(BaseModel):
+    temp_c: float
+    condition: str
 
 
 class HourlyWeather(BaseModel):

@@ -1,8 +1,6 @@
 """add weather_favorites table
 
-pgvector 전환 마이그레이션(6b4e42ce91e4)이 로컬 환경에 vector 익스텐션이 없어
-아직 적용되지 못한 상태라, 이 마이그레이션은 그와 무관하게 503b754c8b0b 위에 별도
-브랜치로 얹는다. pgvector 익스텐션 설치 후에는 `alembic merge heads`로 합칠 것.
+503b754c8b0b 위에 날씨 즐겨찾기 테이블을 추가한다.
 
 Revision ID: 7f3a9c2e5b1d
 Revises: 503b754c8b0b

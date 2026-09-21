@@ -75,6 +75,24 @@ def _extract_route_path(route: dict) -> list[dict]:
     return points
 
 
+def _extract_route_steps(route: dict) -> list[dict]:
+    """카카오 길찾기 응답의 주요 안내 지점을 사용자용 단계 목록으로 변환한다."""
+    steps: list[dict] = []
+    for section in route.get("sections", []):
+        for guide in section.get("guides", []):
+            instruction = guide.get("guidance") or guide.get("name")
+            if not instruction:
+                continue
+            steps.append(
+                {
+                    "instruction": instruction,
+                    "distance_meters": int(guide.get("distance", 0)),
+                    "duration_seconds": int(guide.get("duration", 0)),
+                }
+            )
+    return steps
+
+
 async def get_directions(
     origin_lat: float, origin_lng: float, dest_lat: float, dest_lng: float
 ) -> dict:
@@ -102,11 +120,17 @@ async def get_directions(
         resp.raise_for_status()
         route = resp.json()["routes"][0]
 
-    duration_seconds = route["summary"]["duration"]
+    summary = route["summary"]
+    duration_seconds = summary["duration"]
+    fare = summary.get("fare", {})
 
     return {
         "estimated_minutes": round(duration_seconds / 60),
         "delay_minutes": 0,
         "delay_reason": None,
+        "distance_meters": int(summary.get("distance", 0)),
+        "taxi_fare": int(fare.get("taxi", 0)),
+        "toll_fare": int(fare.get("toll", 0)),
+        "route_steps": _extract_route_steps(route),
         "route_polyline": _extract_route_path(route),
     }

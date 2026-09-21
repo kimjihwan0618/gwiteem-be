@@ -116,6 +116,10 @@ async def check_commute(
         "delay_minutes": directions["delay_minutes"],
         "delay_reason": directions["delay_reason"],
         "recommended_departure_time": None,
+        "distance_meters": directions["distance_meters"],
+        "taxi_fare": directions["taxi_fare"],
+        "toll_fare": directions["toll_fare"],
+        "route_steps": directions["route_steps"],
         "route_polyline": directions["route_polyline"],
     }
 
@@ -219,7 +223,11 @@ async def get_favorites_commute(user_id: int, db: AsyncSession) -> list[dict]:
                     "estimated_minutes": directions["estimated_minutes"],
                     "delay_minutes": directions["delay_minutes"],
                     "delay_reason": directions["delay_reason"],
+                    "distance_meters": directions["distance_meters"],
+                    "taxi_fare": directions["taxi_fare"],
+                    "toll_fare": directions["toll_fare"],
                 },
+                "route_steps": directions["route_steps"],
                 "route_polyline": directions["route_polyline"],
             }
         )

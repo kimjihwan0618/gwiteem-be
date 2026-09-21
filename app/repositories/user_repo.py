@@ -7,7 +7,7 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 
-from app.models.user import GuestInterest, User, UserInterest
+from app.models.user import User
 
 
 async def get_by_provider(provider: str, provider_id: str, db: AsyncSession) -> User | None:
@@ -74,15 +74,3 @@ async def update_last_login(user: User, db: AsyncSession) -> None:
 
 async def delete_user(user_id: int, db: AsyncSession) -> None:
     await db.execute(delete(User).where(User.id == user_id))
-
-
-async def list_user_interests(user_id: int, db: AsyncSession) -> list[UserInterest]:
-    result = await db.execute(select(UserInterest).where(UserInterest.user_id == user_id))
-    return list(result.scalars().all())
-
-
-async def list_guest_interests(session_token: str, db: AsyncSession) -> list[GuestInterest]:
-    result = await db.execute(
-        select(GuestInterest).where(GuestInterest.session_token == session_token)
-    )
-    return list(result.scalars().all())

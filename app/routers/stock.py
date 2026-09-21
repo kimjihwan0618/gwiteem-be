@@ -6,9 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db
 from app.models.user import User
-from app.repositories import news_repo, stock_repo
 from app.schemas.common import ApiResponse
-from app.schemas.news import IssueListResponse, IssueSummary
 from app.schemas.stock import StockDetailResponse, StockSearchResult, WatchlistImpactItem
 from app.services import stock_service
 
@@ -37,42 +35,9 @@ async def search_stocks(q: str = Query(..., min_length=1), db: AsyncSession = De
 
 @router.get("/stocks/{code}", response_model=ApiResponse[StockDetailResponse])
 async def get_stock_detail(code: str, db: AsyncSession = Depends(get_db)):
-    """종목 현재가/등락률 + 관련 뉴스 이슈. 인증: Public."""
+    """종목 현재가와 등락률을 조회한다. 인증: Public."""
     result = await stock_service.get_stock_with_price(code, db)
     return ApiResponse(success=True, data=StockDetailResponse(**result))
-
-
-@router.get("/stocks/{code}/news", response_model=ApiResponse[IssueListResponse])
-async def get_stock_news(
-    code: str,
-    cursor: str | None = Query(default=None),
-    limit: int = Query(default=10, le=50),
-    db: AsyncSession = Depends(get_db),
-):
-    """특정 종목 관련 뉴스만 필터링. 인증: Public."""
-    stock = await stock_repo.get_by_code(code, db)
-    if not stock:
-        return ApiResponse(
-            success=True,
-            data=IssueListResponse(total_raw_articles=0, total_issues=0, issues=[]),
-        )
-
-    cursor_id = int(cursor) if cursor else None
-    issues = await news_repo.get_issues_by_stock_code(code, cursor_id, limit, db)
-
-    next_cursor = str(issues[-1].id) if len(issues) == limit else None
-    return ApiResponse(
-        success=True,
-        data=IssueListResponse(
-            total_raw_articles=sum(i.article_count for i in issues),
-            total_issues=len(issues),
-            issues=[
-                IssueSummary(id=i.id, category=i.category, article_count=i.article_count, title=i.title)
-                for i in issues
-            ],
-            next_cursor=next_cursor,
-        ),
-    )
 
 
 @router.get("/users/me/watchlist/market-impact", response_model=ApiResponse[list[WatchlistImpactItem]])
@@ -80,6 +45,6 @@ async def get_watchlist_market_impact(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """로그인 사용자의 관심 종목 "오늘의 영향" 카드. 인증: Required."""
+    """로그인 사용자의 관심 종목 시세 목록. 인증: Required."""
     items = await stock_service.get_watchlist_market_impact(current_user.id, db)
     return ApiResponse(success=True, data=[WatchlistImpactItem(**item) for item in items])

@@ -1,6 +1,5 @@
 """add commute_favorites table
 
-weather_favorites와 마찬가지로 pgvector 마이그레이션(6b4e42ce91e4)과는 별개 브랜치.
 7f3a9c2e5b1d 위에 이어서 체이닝한다.
 
 Revision ID: 2a6d8e1f4c93

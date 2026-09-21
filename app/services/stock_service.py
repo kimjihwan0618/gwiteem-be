@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import InvalidRequestException, NotFoundException
 from app.external import stock_price_client
-from app.repositories import interest_repo, news_repo, stock_repo
+from app.repositories import interest_repo, stock_repo
 
 _MARKET_COUNTRY = {"domestic": "KR", "overseas": "US"}
 _ALLOWED_DURATIONS = {"1d", "1w", "1mo", "1y"}
@@ -78,7 +78,6 @@ async def get_stock_with_price(code: str, db: AsyncSession) -> dict:
 
     price = await stock_price_client.get_current_price(code)
     history = await stock_price_client.get_price_history(code, days=7)
-    issues = await news_repo.get_issues_by_stock_code(code, cursor_id=None, limit=5, db=db)
 
     return {
         "code": stock.code,
@@ -87,7 +86,6 @@ async def get_stock_with_price(code: str, db: AsyncSession) -> dict:
         "change_rate": price["change_rate"],
         "change_direction": price["change_direction"],
         "price_history_7d": history,
-        "related_issues": [{"id": i.id, "title": i.title} for i in issues],
     }
 
 
@@ -178,16 +176,9 @@ async def get_watchlist_market_impact(user_id: int, db: AsyncSession) -> list[di
             count=200,
             semaphore=asyncio.Semaphore(1),
         )
-        issues = (
-            await news_repo.get_issues_by_stock_code(code, cursor_id=None, limit=1, db=db)
-            if stock
-            else []
-        )
-
         items.append(
             {
                 "stock": {"code": code, "name": stock_name, "market": stock_market},
-                "related_issue_summary": issues[0].summary if issues else None,
                 "current_price": price["current_price"],
                 "change_rate": price["change_rate"],
                 "change_direction": price["change_direction"],

@@ -10,11 +10,6 @@ class StockSearchResult(BaseModel):
     market: str
 
 
-class RelatedIssueBrief(BaseModel):
-    id: int
-    title: str
-
-
 class StockChartPoint(BaseModel):
     timestamp: str
     open: float
@@ -32,12 +27,10 @@ class StockDetailResponse(BaseModel):
     change_direction: str  # UP / DOWN / FLAT
     price_history_7d: list[float] = []
     price_chart: list[StockChartPoint] = []
-    related_issues: list[RelatedIssueBrief] = []
 
 
 class WatchlistImpactItem(BaseModel):
     stock: StockSearchResult
-    related_issue_summary: str | None = None
     current_price: float
     change_rate: float
     change_direction: str

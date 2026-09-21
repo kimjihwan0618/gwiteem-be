@@ -10,19 +10,13 @@ from app.core.config import settings
 from app.core.exceptions import AppException
 from app.routers import (
     auth,
-    briefing,
-    commute,
-    interest,
-    news,
-    schedule,
-    stock,
+    choice,
     user,
-    weather,
 )
 
 app = FastAPI(
     title=settings.APP_NAME,
-    description="출퇴근 맞춤 브리핑 서비스 API",
+    description="일상의 선택을 나누고 결과를 확인하는 서비스 API",
     version="0.1.0",
 )
 
@@ -53,14 +47,8 @@ async def app_exception_handler(request: Request, exc: AppException):
 # --- 라우터 등록 (모두 /api/v1 prefix) ---
 API_PREFIX = "/api/v1"
 app.include_router(auth.router, prefix=API_PREFIX)
-app.include_router(briefing.router, prefix=API_PREFIX)
-app.include_router(news.router, prefix=API_PREFIX)
-app.include_router(stock.router, prefix=API_PREFIX)
-app.include_router(commute.router, prefix=API_PREFIX)
-app.include_router(interest.router, prefix=API_PREFIX)
-app.include_router(schedule.router, prefix=API_PREFIX)
+app.include_router(choice.router, prefix=API_PREFIX)
 app.include_router(user.router, prefix=API_PREFIX)
-app.include_router(weather.router, prefix=API_PREFIX)
 
 
 @app.get("/health", tags=["health"])

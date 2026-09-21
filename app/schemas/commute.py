@@ -21,6 +21,12 @@ class RoutePoint(BaseModel):
     lng: float
 
 
+class RouteStep(BaseModel):
+    instruction: str
+    distance_meters: int
+    duration_seconds: int
+
+
 class CommuteCheckResponse(BaseModel):
     origin: LocationPoint
     destination: LocationPoint
@@ -28,6 +34,10 @@ class CommuteCheckResponse(BaseModel):
     delay_minutes: int
     delay_reason: str | None = None
     recommended_departure_time: str | None = None
+    distance_meters: int = 0
+    taxi_fare: int = 0
+    toll_fare: int = 0
+    route_steps: list[RouteStep] = []
     route_polyline: list[RoutePoint] = []
 
 
@@ -72,9 +82,13 @@ class CommuteEstimate(BaseModel):
     estimated_minutes: int
     delay_minutes: int
     delay_reason: str | None = None
+    distance_meters: int = 0
+    taxi_fare: int = 0
+    toll_fare: int = 0
 
 
 class FavoriteCommuteItem(BaseModel):
     favorite: CommuteFavoriteResponse
     commute: CommuteEstimate
+    route_steps: list[RouteStep] = []
     route_polyline: list[RoutePoint] = []

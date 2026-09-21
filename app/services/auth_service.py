@@ -244,7 +244,7 @@ async def handle_oauth_callback(
 
 
 async def withdraw_user(user_id: int, db: AsyncSession) -> None:
-    """회원 탈퇴. FK cascade로 연관 데이터(user_interests 등)도 함께 삭제되고, 모든 기기의 로그인 세션도 무효화한다."""
+    """회원 탈퇴. FK cascade로 선택 이력도 삭제하고 모든 기기의 로그인 세션을 무효화한다."""
     await user_repo.delete_user(user_id, db)
     await db.commit()
 
