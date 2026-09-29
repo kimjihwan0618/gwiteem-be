@@ -9,6 +9,7 @@ from app.schemas.choice import (
     ChoiceQuestionDetail,
     ChoiceQuestionItem,
     ChoiceQuestionsResponse,
+    ChoiceOptionResult,
     ChoiceReasonItem,
     ChoiceReasonResult,
     ChoiceResult,
@@ -28,9 +29,13 @@ def _question_item(
         title=question.title,
         option_a=question.option_a,
         option_b=question.option_b,
+        option_c=question.option_c,
+        option_d=question.option_d,
         is_daily=question.is_daily,
         participant_count=participant_count,
         my_choice=vote.selected_option if vote else None,
+        author_name=question.author.nickname if question.author else "Gwiteem",
+        created_at=question.created_at,
         published_at=question.published_at,
     )
 
@@ -58,21 +63,24 @@ async def _build_detail(
     vote: ChoiceVote | None,
     db: AsyncSession,
 ) -> ChoiceQuestionDetail:
-    option_a_count, option_b_count = await choice_repo.count_votes(question.id, db)
-    total_count = option_a_count + option_b_count
+    option_counts = await choice_repo.count_votes(question.id, db)
+    total_count = sum(option_counts.values())
     reason_counts = await choice_repo.count_reasons(question.id, db)
     result = None
     if vote is not None:
         result = ChoiceResult(
             total_count=total_count,
-            option_a_count=option_a_count,
-            option_b_count=option_b_count,
-            option_a_percentage=round(option_a_count / total_count * 100, 1)
-            if total_count
-            else 0,
-            option_b_percentage=round(option_b_count / total_count * 100, 1)
-            if total_count
-            else 0,
+            options=[
+                ChoiceOptionResult(
+                    option=option,
+                    label=label,
+                    count=option_counts[option],
+                    percentage=round(option_counts[option] / total_count * 100, 1)
+                    if total_count
+                    else 0,
+                )
+                for option, label in _question_options(question)
+            ],
             reasons=[
                 ChoiceReasonResult(
                     id=reason.id,
@@ -110,7 +118,7 @@ async def get_question(
 async def vote(
     question_id: int,
     selected_option: str,
-    reason_id: int | None,
+    reason_id: int,
     user_id: int | None,
     guest_session_id: str,
     db: AsyncSession,
@@ -118,7 +126,9 @@ async def vote(
     question = await choice_repo.get_question(question_id, db)
     if question is None:
         raise NotFoundException("질문을 찾을 수 없습니다.")
-    if reason_id is not None and reason_id not in {reason.id for reason in question.reasons}:
+    if selected_option not in {option for option, _ in _question_options(question)}:
+        raise InvalidRequestException("선택한 항목이 이 질문에 존재하지 않습니다.")
+    if reason_id not in {reason.id for reason in question.reasons}:
         raise InvalidRequestException("선택한 이유가 이 질문에 속하지 않습니다.")
 
     existing = await choice_repo.get_vote(question_id, user_id, guest_session_id, db)
@@ -163,17 +173,26 @@ async def list_my_choices(user_id: int, db: AsyncSession) -> list[MyChoiceItem]:
     votes = await choice_repo.list_user_votes(user_id, db)
     items: list[MyChoiceItem] = []
     for vote in votes:
-        option_a_count, option_b_count = await choice_repo.count_votes(vote.question_id, db)
+        option_counts = await choice_repo.count_votes(vote.question_id, db)
         items.append(
             MyChoiceItem(
                 question=_question_item(
-                    vote.question, option_a_count + option_b_count, vote
+                    vote.question, sum(option_counts.values()), vote
                 ),
                 selected_option=vote.selected_option,
-                reason=ChoiceReasonItem(id=vote.reason.id, label=vote.reason.label)
-                if vote.reason
-                else None,
+                reason=ChoiceReasonItem(id=vote.reason.id, label=vote.reason.label),
                 voted_at=vote.updated_at,
             )
         )
     return items
+
+
+def _question_options(question: ChoiceQuestion) -> list[tuple[str, str]]:
+    """질문에 실제 등록된 선택지를 순서대로 반환한다."""
+    options = [
+        ("A", question.option_a),
+        ("B", question.option_b),
+        ("C", question.option_c),
+        ("D", question.option_d),
+    ]
+    return [(option, label) for option, label in options if label is not None]

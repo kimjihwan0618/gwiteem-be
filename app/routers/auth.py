@@ -52,7 +52,9 @@ async def oauth_callback(
     if provider not in SUPPORTED_PROVIDERS:
         raise InvalidRequestException(f"지원하지 않는 provider입니다: {provider}")
 
-    user, is_new_user = await auth_service.handle_oauth_callback(provider, body.code, db)
+    user, is_new_user = await auth_service.handle_oauth_callback(
+        provider, body.code, body.state, db
+    )
     tokens = await auth_service.issue_tokens(user)
 
     return ApiResponse(

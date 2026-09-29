@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 
 ChoiceCategory = Literal["work", "spending", "relationship", "daily"]
-ChoiceOption = Literal["A", "B"]
+ChoiceOption = Literal["A", "B", "C", "D"]
 
 
 class ChoiceReasonItem(BaseModel):
@@ -21,9 +21,13 @@ class ChoiceQuestionItem(BaseModel):
     title: str
     option_a: str
     option_b: str
+    option_c: str | None = None
+    option_d: str | None = None
     is_daily: bool
     participant_count: int
     my_choice: ChoiceOption | None = None
+    author_name: str
+    created_at: datetime
     published_at: datetime
 
 
@@ -38,12 +42,16 @@ class ChoiceReasonResult(BaseModel):
     percentage: float
 
 
+class ChoiceOptionResult(BaseModel):
+    option: ChoiceOption
+    label: str
+    count: int
+    percentage: float
+
+
 class ChoiceResult(BaseModel):
     total_count: int
-    option_a_count: int
-    option_b_count: int
-    option_a_percentage: float
-    option_b_percentage: float
+    options: list[ChoiceOptionResult]
     reasons: list[ChoiceReasonResult]
 
 
@@ -55,7 +63,7 @@ class ChoiceQuestionDetail(ChoiceQuestionItem):
 
 class ChoiceVoteRequest(BaseModel):
     selected_option: ChoiceOption
-    reason_id: int | None = Field(default=None, ge=1)
+    reason_id: int = Field(ge=1)
 
 
 class ChoiceVoteResponse(BaseModel):
@@ -69,5 +77,5 @@ class ChoiceVoteMigrationResponse(BaseModel):
 class MyChoiceItem(BaseModel):
     question: ChoiceQuestionItem
     selected_option: ChoiceOption
-    reason: ChoiceReasonItem | None
+    reason: ChoiceReasonItem
     voted_at: datetime

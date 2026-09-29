@@ -10,6 +10,7 @@ class LoginUrlResponse(BaseModel):
 
 class OAuthCallbackRequest(BaseModel):
     code: str
+    state: str | None = None
 
 
 class RegisterRequest(BaseModel):

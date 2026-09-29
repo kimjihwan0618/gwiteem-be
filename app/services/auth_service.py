@@ -202,15 +202,20 @@ async def login_local_user(email: str, password: str, db: AsyncSession) -> User:
 
 
 async def handle_oauth_callback(
-    provider: str, code: str, db: AsyncSession
+    provider: str, code: str, state: str | None, db: AsyncSession
 ) -> tuple[User, bool]:
     """
     소셜 로그인 콜백 처리.
     Returns: (user, is_new_user)
     """
-    access_token = await oauth_client.exchange_code_for_token(provider, code)
+    access_token = await oauth_client.exchange_code_for_token(provider, code, state)
     info = await oauth_client.fetch_user_info(provider, access_token)
     user = await user_repo.get_by_provider(provider, info["provider_id"], db)
+
+    # 이미 다른 로그인 방식으로 가입했더라도 OAuth 제공자가 확인한 동일 이메일이면
+    # 기존 계정으로 연결해 users.email 고유 제약으로 인한 500 오류를 방지한다.
+    if user is None and info.get("email"):
+        user = await user_repo.get_by_email(info["email"], db)
 
     if user is None:
         user = await user_repo.create_user(

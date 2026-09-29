@@ -17,15 +17,23 @@ async def list_questions(
     statement = (
         select(ChoiceQuestion, vote_count)
         .outerjoin(ChoiceVote, ChoiceVote.question_id == ChoiceQuestion.id)
+        .options(selectinload(ChoiceQuestion.author))
         .where(ChoiceQuestion.is_active.is_(True))
         .group_by(ChoiceQuestion.id)
     )
     if category:
         statement = statement.where(ChoiceQuestion.category == category)
     if sort == "popular":
-        statement = statement.order_by(vote_count.desc(), ChoiceQuestion.published_at.desc())
+        statement = statement.order_by(
+            vote_count.desc(),
+            ChoiceQuestion.published_at.desc(),
+            ChoiceQuestion.id.desc(),
+        )
     else:
-        statement = statement.order_by(ChoiceQuestion.published_at.desc())
+        statement = statement.order_by(
+            ChoiceQuestion.published_at.desc(),
+            ChoiceQuestion.id.desc(),
+        )
     result = await db.execute(statement)
     return [(question, int(count)) for question, count in result.all()]
 
@@ -33,7 +41,10 @@ async def list_questions(
 async def get_question(question_id: int, db: AsyncSession) -> ChoiceQuestion | None:
     result = await db.execute(
         select(ChoiceQuestion)
-        .options(selectinload(ChoiceQuestion.reasons))
+        .options(
+            selectinload(ChoiceQuestion.author),
+            selectinload(ChoiceQuestion.reasons),
+        )
         .where(ChoiceQuestion.id == question_id, ChoiceQuestion.is_active.is_(True))
     )
     return result.scalar_one_or_none()
@@ -73,15 +84,22 @@ async def list_votes_for_identity(
     return list(result.scalars().all())
 
 
-async def count_votes(question_id: int, db: AsyncSession) -> tuple[int, int]:
+async def count_votes(question_id: int, db: AsyncSession) -> dict[str, int]:
     result = await db.execute(
         select(
             func.sum(case((ChoiceVote.selected_option == "A", 1), else_=0)),
             func.sum(case((ChoiceVote.selected_option == "B", 1), else_=0)),
+            func.sum(case((ChoiceVote.selected_option == "C", 1), else_=0)),
+            func.sum(case((ChoiceVote.selected_option == "D", 1), else_=0)),
         ).where(ChoiceVote.question_id == question_id)
     )
-    option_a, option_b = result.one()
-    return int(option_a or 0), int(option_b or 0)
+    option_a, option_b, option_c, option_d = result.one()
+    return {
+        "A": int(option_a or 0),
+        "B": int(option_b or 0),
+        "C": int(option_c or 0),
+        "D": int(option_d or 0),
+    }
 
 
 async def count_reasons(question_id: int, db: AsyncSession) -> dict[int, int]:
@@ -96,7 +114,7 @@ async def count_reasons(question_id: int, db: AsyncSession) -> dict[int, int]:
 async def create_vote(
     question_id: int,
     selected_option: str,
-    reason_id: int | None,
+    reason_id: int,
     user_id: int | None,
     guest_session_id: str,
     db: AsyncSession,
@@ -118,6 +136,7 @@ async def list_user_votes(user_id: int, db: AsyncSession) -> list[ChoiceVote]:
         select(ChoiceVote)
         .options(
             selectinload(ChoiceVote.question).selectinload(ChoiceQuestion.reasons),
+            selectinload(ChoiceVote.question).selectinload(ChoiceQuestion.author),
             selectinload(ChoiceVote.reason),
         )
         .where(ChoiceVote.user_id == user_id)
