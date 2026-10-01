@@ -3,7 +3,7 @@
 app.models 패키지 import 한 번으로 전체 테이블을 인식할 수 있다.
 (개별 모델 파일이 새로 추가되면 이 파일에도 import를 추가해야 한다.)
 """
-from app.models.choice import ChoiceQuestion, ChoiceReason, ChoiceVote  # noqa: F401
+from app.models.choice import ChoiceLike, ChoiceQuestion, ChoiceReason, ChoiceVote  # noqa: F401
 from app.models.user import User  # noqa: F401
 
 __all__ = [
@@ -11,4 +11,5 @@ __all__ = [
     "ChoiceQuestion",
     "ChoiceReason",
     "ChoiceVote",
+    "ChoiceLike",
 ]

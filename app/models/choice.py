@@ -3,7 +3,16 @@
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Index, Integer, String, text
+from sqlalchemy import (
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.base import Base
@@ -43,6 +52,9 @@ class ChoiceQuestion(Base):
         back_populates="question", cascade="all, delete-orphan", order_by="ChoiceReason.sort_order"
     )
     votes: Mapped[list["ChoiceVote"]] = relationship(
+        back_populates="question", cascade="all, delete-orphan"
+    )
+    likes: Mapped[list["ChoiceLike"]] = relationship(
         back_populates="question", cascade="all, delete-orphan"
     )
 
@@ -111,3 +123,27 @@ class ChoiceVote(Base):
 
     question: Mapped["ChoiceQuestion"] = relationship(back_populates="votes")
     reason: Mapped["ChoiceReason"] = relationship()
+
+
+class ChoiceLike(Base):
+    """로그인 사용자의 질문별 좋아요."""
+
+    __tablename__ = "choice_likes"
+    __table_args__ = (
+        UniqueConstraint(
+            "question_id",
+            "user_id",
+            name="uq_choice_likes_question_user",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    question_id: Mapped[int] = mapped_column(
+        ForeignKey("choice_questions.id", ondelete="CASCADE"), index=True
+    )
+    user_id: Mapped[int] = mapped_column(
+        ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    question: Mapped["ChoiceQuestion"] = relationship(back_populates="likes")

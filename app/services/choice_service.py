@@ -9,18 +9,22 @@ from app.schemas.choice import (
     ChoiceQuestionDetail,
     ChoiceQuestionItem,
     ChoiceQuestionsResponse,
+    ChoiceLikeResponse,
     ChoiceOptionResult,
     ChoiceReasonItem,
     ChoiceReasonResult,
     ChoiceResult,
     ChoiceVoteResponse,
     MyChoiceItem,
+    MyLikedQuestionItem,
 )
 
 
 def _question_item(
     question: ChoiceQuestion,
     participant_count: int,
+    like_count: int,
+    is_liked: bool,
     vote: ChoiceVote | None,
 ) -> ChoiceQuestionItem:
     return ChoiceQuestionItem(
@@ -33,6 +37,8 @@ def _question_item(
         option_d=question.option_d,
         is_daily=question.is_daily,
         participant_count=participant_count,
+        like_count=like_count,
+        is_liked=is_liked,
         my_choice=vote.selected_option if vote else None,
         author_name=question.author.nickname if question.author else "Gwiteem",
         created_at=question.created_at,
@@ -50,10 +56,21 @@ async def list_questions(
     questions = await choice_repo.list_questions(category, sort, db)
     votes = await choice_repo.list_votes_for_identity(user_id, guest_session_id, db)
     vote_by_question = {vote.question_id: vote for vote in votes}
+    liked_question_ids = (
+        await choice_repo.list_liked_question_ids(user_id, db)
+        if user_id is not None
+        else set()
+    )
     return ChoiceQuestionsResponse(
         items=[
-            _question_item(question, count, vote_by_question.get(question.id))
-            for question, count in questions
+            _question_item(
+                question,
+                participant_count,
+                like_count,
+                question.id in liked_question_ids,
+                vote_by_question.get(question.id),
+            )
+            for question, participant_count, like_count in questions
         ]
     )
 
@@ -61,6 +78,7 @@ async def list_questions(
 async def _build_detail(
     question: ChoiceQuestion,
     vote: ChoiceVote | None,
+    is_liked: bool,
     db: AsyncSession,
 ) -> ChoiceQuestionDetail:
     option_counts = await choice_repo.count_votes(question.id, db)
@@ -93,7 +111,8 @@ async def _build_detail(
                 for reason in question.reasons
             ],
         )
-    item = _question_item(question, total_count, vote)
+    like_count = await choice_repo.count_likes(question.id, db)
+    item = _question_item(question, total_count, like_count, is_liked, vote)
     return ChoiceQuestionDetail(
         **item.model_dump(),
         reasons=[ChoiceReasonItem(id=reason.id, label=reason.label) for reason in question.reasons],
@@ -112,7 +131,12 @@ async def get_question(
     if question is None:
         raise NotFoundException("질문을 찾을 수 없습니다.")
     vote = await choice_repo.get_vote(question_id, user_id, guest_session_id, db)
-    return await _build_detail(question, vote, db)
+    is_liked = (
+        await choice_repo.get_like(question_id, user_id, db) is not None
+        if user_id is not None
+        else False
+    )
+    return await _build_detail(question, vote, is_liked, db)
 
 
 async def vote(
@@ -146,7 +170,14 @@ async def vote(
         existing.reason_id = reason_id
     await db.commit()
     await db.refresh(existing)
-    return ChoiceVoteResponse(question=await _build_detail(question, existing, db))
+    is_liked = (
+        await choice_repo.get_like(question_id, user_id, db) is not None
+        if user_id is not None
+        else False
+    )
+    return ChoiceVoteResponse(
+        question=await _build_detail(question, existing, is_liked, db)
+    )
 
 
 async def migrate_guest_votes(
@@ -171,17 +202,75 @@ async def migrate_guest_votes(
 
 async def list_my_choices(user_id: int, db: AsyncSession) -> list[MyChoiceItem]:
     votes = await choice_repo.list_user_votes(user_id, db)
+    liked_question_ids = await choice_repo.list_liked_question_ids(user_id, db)
     items: list[MyChoiceItem] = []
     for vote in votes:
         option_counts = await choice_repo.count_votes(vote.question_id, db)
+        like_count = await choice_repo.count_likes(vote.question_id, db)
         items.append(
             MyChoiceItem(
                 question=_question_item(
-                    vote.question, sum(option_counts.values()), vote
+                    vote.question,
+                    sum(option_counts.values()),
+                    like_count,
+                    vote.question_id in liked_question_ids,
+                    vote,
                 ),
                 selected_option=vote.selected_option,
                 reason=ChoiceReasonItem(id=vote.reason.id, label=vote.reason.label),
                 voted_at=vote.updated_at,
+            )
+        )
+    return items
+
+
+async def set_like(
+    question_id: int,
+    user_id: int,
+    is_liked: bool,
+    db: AsyncSession,
+) -> ChoiceLikeResponse:
+    """로그인 사용자의 질문 좋아요 상태를 멱등하게 변경한다."""
+    question = await choice_repo.get_question(question_id, db)
+    if question is None:
+        raise NotFoundException("질문을 찾을 수 없습니다.")
+
+    existing = await choice_repo.get_like(question_id, user_id, db)
+    if is_liked and existing is None:
+        await choice_repo.create_like(question_id, user_id, db)
+    elif not is_liked and existing is not None:
+        await choice_repo.delete_like(existing, db)
+    await db.commit()
+
+    return ChoiceLikeResponse(
+        question_id=question_id,
+        is_liked=is_liked,
+        like_count=await choice_repo.count_likes(question_id, db),
+    )
+
+
+async def list_my_liked_questions(
+    user_id: int,
+    db: AsyncSession,
+) -> list[MyLikedQuestionItem]:
+    """로그인 사용자가 좋아요한 질문 목록을 반환한다."""
+    likes = await choice_repo.list_user_likes(user_id, db)
+    votes = await choice_repo.list_votes_for_identity(user_id, "", db)
+    vote_by_question = {vote.question_id: vote for vote in votes}
+    items: list[MyLikedQuestionItem] = []
+    for like in likes:
+        option_counts = await choice_repo.count_votes(like.question_id, db)
+        like_count = await choice_repo.count_likes(like.question_id, db)
+        items.append(
+            MyLikedQuestionItem(
+                question=_question_item(
+                    like.question,
+                    sum(option_counts.values()),
+                    like_count,
+                    True,
+                    vote_by_question.get(like.question_id),
+                ),
+                liked_at=like.created_at,
             )
         )
     return items

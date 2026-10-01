@@ -25,6 +25,8 @@ class ChoiceQuestionItem(BaseModel):
     option_d: str | None = None
     is_daily: bool
     participant_count: int
+    like_count: int
+    is_liked: bool
     my_choice: ChoiceOption | None = None
     author_name: str
     created_at: datetime
@@ -74,8 +76,19 @@ class ChoiceVoteMigrationResponse(BaseModel):
     migrated_count: int
 
 
+class ChoiceLikeResponse(BaseModel):
+    question_id: int
+    is_liked: bool
+    like_count: int
+
+
 class MyChoiceItem(BaseModel):
     question: ChoiceQuestionItem
     selected_option: ChoiceOption
     reason: ChoiceReasonItem
     voted_at: datetime
+
+
+class MyLikedQuestionItem(BaseModel):
+    question: ChoiceQuestionItem
+    liked_at: datetime

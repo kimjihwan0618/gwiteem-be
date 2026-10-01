@@ -10,10 +10,12 @@ from app.models.user import User
 from app.schemas.choice import (
     ChoiceQuestionDetail,
     ChoiceQuestionsResponse,
+    ChoiceLikeResponse,
     ChoiceVoteMigrationResponse,
     ChoiceVoteRequest,
     ChoiceVoteResponse,
     MyChoiceItem,
+    MyLikedQuestionItem,
 )
 from app.schemas.common import ApiResponse
 from app.services import choice_service
@@ -24,7 +26,7 @@ router = APIRouter(prefix="/choices", tags=["choices"])
 @router.get("/questions", response_model=ApiResponse[ChoiceQuestionsResponse])
 async def list_questions(
     category: Literal["work", "spending", "relationship", "daily"] | None = Query(default=None),
-    sort: Literal["popular", "latest"] = Query(default="popular"),
+    sort: Literal["popular", "latest", "liked"] = Query(default="popular"),
     current_user: User | None = Depends(get_optional_user),
     guest_session_id: str = Depends(get_guest_session_id),
     db: AsyncSession = Depends(get_db),
@@ -80,6 +82,34 @@ async def vote(
     return ApiResponse(success=True, data=data)
 
 
+@router.put(
+    "/questions/{question_id}/like",
+    response_model=ApiResponse[ChoiceLikeResponse],
+)
+async def like_question(
+    question_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[ChoiceLikeResponse]:
+    """질문에 좋아요를 추가. 인증: Required."""
+    data = await choice_service.set_like(question_id, current_user.id, True, db)
+    return ApiResponse(success=True, data=data)
+
+
+@router.delete(
+    "/questions/{question_id}/like",
+    response_model=ApiResponse[ChoiceLikeResponse],
+)
+async def unlike_question(
+    question_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[ChoiceLikeResponse]:
+    """질문의 좋아요를 제거. 인증: Required."""
+    data = await choice_service.set_like(question_id, current_user.id, False, db)
+    return ApiResponse(success=True, data=data)
+
+
 @router.post(
     "/votes/migrate",
     response_model=ApiResponse[ChoiceVoteMigrationResponse],
@@ -106,4 +136,14 @@ async def list_my_choices(
 ) -> ApiResponse[list[MyChoiceItem]]:
     """로그인 사용자의 선택 기록. 인증: Required."""
     data = await choice_service.list_my_choices(current_user.id, db)
+    return ApiResponse(success=True, data=data)
+
+
+@router.get("/me/likes", response_model=ApiResponse[list[MyLikedQuestionItem]])
+async def list_my_liked_questions(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[list[MyLikedQuestionItem]]:
+    """로그인 사용자가 좋아요한 질문 목록. 인증: Required."""
+    data = await choice_service.list_my_liked_questions(current_user.id, db)
     return ApiResponse(success=True, data=data)
