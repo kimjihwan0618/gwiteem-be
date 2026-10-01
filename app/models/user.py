@@ -13,7 +13,7 @@ class User(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
-    nickname: Mapped[str] = mapped_column(String(50))
+    nickname: Mapped[str] = mapped_column(String(50), unique=True)
     provider: Mapped[str] = mapped_column(String(20))  # kakao / naver / google / local
     provider_id: Mapped[str] = mapped_column(String(255))
     password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)  # provider="local" 회원가입 유저만 사용

@@ -27,6 +27,12 @@ async def get_by_email(email: str, db: AsyncSession) -> User | None:
     return result.scalar_one_or_none()
 
 
+async def get_by_nickname(nickname: str, db: AsyncSession) -> User | None:
+    """닉네임이 정확히 일치하는 사용자를 조회한다."""
+    result = await db.execute(select(User).where(User.nickname == nickname))
+    return result.scalar_one_or_none()
+
+
 async def create_local_user(
     email: str,
     password_hash: str,

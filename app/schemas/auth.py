@@ -19,6 +19,10 @@ class RegisterRequest(BaseModel):
     nickname: str
 
 
+class NicknameAvailabilityResponse(BaseModel):
+    is_available: bool
+
+
 class EmailVerificationSendRequest(BaseModel):
     email: str
 

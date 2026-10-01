@@ -146,6 +146,22 @@ async def register_local_user(
     이메일/비밀번호 회원가입.
     Returns: (user, is_new_user) - OAuth 콜백과 동일한 반환 형태로 라우터에서 재사용.
     """
+    nickname = nickname.strip()
+    if not nickname:
+        raise InvalidRequestException(
+            message="닉네임을 입력해 주세요.", code="INVALID_NICKNAME"
+        )
+    if len(nickname) > 50:
+        raise InvalidRequestException(
+            message="닉네임은 50자 이하로 입력해 주세요.",
+            code="INVALID_NICKNAME",
+        )
+    if await user_repo.get_by_nickname(nickname, db) is not None:
+        raise ConflictException(
+            message="이미 사용 중인 닉네임입니다.",
+            code="NICKNAME_ALREADY_EXISTS",
+        )
+
     existing = await user_repo.get_by_email(email, db)
     if existing is not None:
         if existing.provider != "local":
@@ -170,12 +186,47 @@ async def register_local_user(
     try:
         await db.commit()
     except IntegrityError:
-        # 동시 요청으로 같은 이메일이 먼저 커밋된 경우 (check-then-insert race)
+        # 동시 요청으로 같은 이메일 또는 닉네임이 먼저 커밋된 경우
         await db.rollback()
+        if await user_repo.get_by_nickname(nickname, db) is not None:
+            raise ConflictException(
+                message="이미 사용 중인 닉네임입니다.",
+                code="NICKNAME_ALREADY_EXISTS",
+            )
         raise ConflictException(message="이미 가입된 이메일입니다.")
     await db.refresh(user)
     await redis_client.delete(_email_verified_key(email))
     return user, True
+
+
+async def is_nickname_available(nickname: str, db: AsyncSession) -> bool:
+    """공백을 제거한 닉네임의 사용 가능 여부를 반환한다."""
+    normalized = nickname.strip()
+    if not normalized:
+        raise InvalidRequestException(
+            message="닉네임을 입력해 주세요.", code="INVALID_NICKNAME"
+        )
+    if len(normalized) > 50:
+        raise InvalidRequestException(
+            message="닉네임은 50자 이하로 입력해 주세요.",
+            code="INVALID_NICKNAME",
+        )
+    return await user_repo.get_by_nickname(normalized, db) is None
+
+
+async def make_available_nickname(nickname: str, db: AsyncSession) -> str:
+    """소셜 로그인 닉네임이 중복되면 숫자 접미사를 붙인다."""
+    base = nickname.strip()[:50] or "사용자"
+    if await user_repo.get_by_nickname(base, db) is None:
+        return base
+
+    suffix = 2
+    while True:
+        suffix_text = f"-{suffix}"
+        candidate = f"{base[: 50 - len(suffix_text)]}{suffix_text}"
+        if await user_repo.get_by_nickname(candidate, db) is None:
+            return candidate
+        suffix += 1
 
 
 async def login_local_user(email: str, password: str, db: AsyncSession) -> User:
@@ -218,10 +269,11 @@ async def handle_oauth_callback(
         user = await user_repo.get_by_email(info["email"], db)
 
     if user is None:
+        nickname = await make_available_nickname(info["nickname"], db)
         user = await user_repo.create_user(
             provider=provider,
             provider_id=info["provider_id"],
-            nickname=info["nickname"],
+            nickname=nickname,
             email=info.get("email"),
             profile_image_url=info.get("profile_image_url"),
             db=db,

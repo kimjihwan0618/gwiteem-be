@@ -15,6 +15,7 @@ from app.schemas.auth import (
     EmailVerificationSendRequest,
     LoginRequest,
     LoginUrlResponse,
+    NicknameAvailabilityResponse,
     LogoutRequest,
     OAuthCallbackRequest,
     PasswordResetConfirmRequest,
@@ -30,6 +31,22 @@ from app.services import auth_service
 from app.external.oauth_client import SUPPORTED_PROVIDERS, build_authorize_url
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+
+@router.get(
+    "/nickname/availability",
+    response_model=ApiResponse[NicknameAvailabilityResponse],
+)
+async def check_nickname_availability(
+    nickname: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """회원가입 닉네임 사용 가능 여부 확인. 인증: Public."""
+    is_available = await auth_service.is_nickname_available(nickname, db)
+    return ApiResponse(
+        success=True,
+        data=NicknameAvailabilityResponse(is_available=is_available),
+    )
 
 
 @router.get("/{provider}/login-url", response_model=ApiResponse[LoginUrlResponse])
