@@ -50,3 +50,9 @@ python -m pytest
 ```
 
 현재 자동화 테스트 파일은 아직 없습니다.
+
+## NAS 파일 배포
+
+GitHub Actions는 실행 소스와 Python 의존성을 NAS의 `/volume1/docker/gwiteem/product/be`에 배치합니다.
+Python 컨테이너 마운트와 시작 명령은 [NAS 전송 안내](docs/nas-transfer.md)를 참고하세요.
+배포 과정에서 서버 실행이나 DB 마이그레이션은 수행하지 않습니다.

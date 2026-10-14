@@ -1,0 +1,68 @@
+name: Build and transfer BE to NAS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nas-be
+  cancel-in-progress: false
+
+jobs:
+  build-and-transfer:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults:
+      run:
+        shell: bash
+    env:
+      NAS_PATH: /volume1/docker/gwiteem/product/be
+      ARCHIVE: gwiteem-be.tar.gz
+      PYTHON_IMAGE: python:3.12-slim-bookworm
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Prepare Python runtime and validate imports
+        run: |
+          set -euo pipefail
+          build_dir="$RUNNER_TEMP/nas-build"
+          mkdir -p "$build_dir"
+          docker run --rm --platform linux/amd64 \
+            --mount "type=bind,source=$GITHUB_WORKSPACE,target=/source,readonly" \
+            --mount "type=bind,source=$build_dir,target=/output" \
+            --workdir /source \
+            "$PYTHON_IMAGE" python scripts/package-nas-build.py /output/runtime
+          tar -czf "$ARCHIVE" -C "$build_dir/runtime" .
+          sha256sum "$ARCHIVE" > "$ARCHIVE.sha256"
+
+      - name: Install SSH password helper
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes sshpass
+
+      - name: Transfer and unpack runtime files on NAS
+        env:
+          SSHPASS: ${{ secrets.NAS_SSH_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${SSHPASS:?Set NAS_SSH_PASSWORD repository secret}"
+          ssh_dir="$(mktemp -d)"
+          trap 'rm -rf "$ssh_dir"' EXIT
+          touch "$ssh_dir/known_hosts"
+          chmod 600 "$ssh_dir/known_hosts"
+          # 실행별 첫 접속의 호스트 키를 자동 저장하고, 같은 실행 중 키 변경은 거부합니다.
+          ssh_options=(-o BatchMode=no -o PubkeyAuthentication=no -o PreferredAuthentications=password -o NumberOfPasswordPrompts=1 -o StrictHostKeyChecking=accept-new -o "UserKnownHostsFile=$ssh_dir/known_hosts" -o ConnectTimeout=30 -o ServerAliveInterval=15 -o ServerAliveCountMax=3)
+          target="hodo_admin@kimjihodo.synology.me"
+          transfer_id="${GITHUB_SHA}-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          release="$NAS_PATH/.transfers/$transfer_id"
+          sshpass -e ssh -p 22 "${ssh_options[@]}" "$target" "umask 077; mkdir -p '$release'"
+          sshpass -e scp -O -P 22 "${ssh_options[@]}" "$ARCHIVE" "$ARCHIVE.sha256" "$target:$release/"
+          sshpass -e ssh -p 22 "${ssh_options[@]}" "$target" "sh -s -- '$NAS_PATH' '$transfer_id' '$ARCHIVE'" < scripts/install-nas-build.sh
+          printf 'Runtime files ready: %s:%s (server not started)\n' "$target" "$NAS_PATH" >> "$GITHUB_STEP_SUMMARY"
+          printf 'Archive and backup: %s:%s\n' "$target" "$release" >> "$GITHUB_STEP_SUMMARY"
