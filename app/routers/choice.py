@@ -1,6 +1,6 @@
 """일상 선택 질문 API 라우터."""
 
-from typing import Literal
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,8 +16,9 @@ from app.schemas.choice import (
     ChoiceVoteResponse,
     MyChoiceItem,
     MyLikedQuestionItem,
+    QuestionListParams,
 )
-from app.schemas.common import ApiResponse
+from app.schemas.common import ApiResponse, CursorPage
 from app.services import choice_service
 from app.routers.comment import router as comment_router
 
@@ -27,19 +28,19 @@ router.include_router(comment_router)
 
 @router.get("/questions", response_model=ApiResponse[ChoiceQuestionsResponse])
 async def list_questions(
-    category: Literal["work", "spending", "relationship", "daily"] | None = Query(default=None),
-    sort: Literal["popular", "latest", "liked"] = Query(default="popular"),
+    params: Annotated[QuestionListParams, Query()],
     current_user: User | None = Depends(get_optional_user),
     guest_session_id: str = Depends(get_guest_session_id),
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse[ChoiceQuestionsResponse]:
     """활성 질문 목록. 인증: Optional."""
     data = await choice_service.list_questions(
-        category,
-        sort,
+        params.category,
+        params.sort,
         current_user.id if current_user else None,
         guest_session_id,
         db,
+        search=params.q, limit=params.limit, cursor=params.cursor,
     )
     return ApiResponse(success=True, data=data)
 
@@ -131,21 +132,25 @@ async def migrate_votes(
     )
 
 
-@router.get("/me", response_model=ApiResponse[list[MyChoiceItem]])
+@router.get("/me", response_model=ApiResponse[CursorPage[MyChoiceItem]])
 async def list_my_choices(
+    params: Annotated[QuestionListParams, Query()],
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> ApiResponse[list[MyChoiceItem]]:
+) -> ApiResponse[CursorPage[MyChoiceItem]]:
     """로그인 사용자의 선택 기록. 인증: Required."""
-    data = await choice_service.list_my_choices(current_user.id, db)
+    data = await choice_service.list_my_choices(current_user.id, db, category=params.category,
+        sort=params.sort, search=params.q, limit=params.limit, cursor=params.cursor)
     return ApiResponse(success=True, data=data)
 
 
-@router.get("/me/likes", response_model=ApiResponse[list[MyLikedQuestionItem]])
+@router.get("/me/likes", response_model=ApiResponse[CursorPage[MyLikedQuestionItem]])
 async def list_my_liked_questions(
+    params: Annotated[QuestionListParams, Query()],
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
-) -> ApiResponse[list[MyLikedQuestionItem]]:
+) -> ApiResponse[CursorPage[MyLikedQuestionItem]]:
     """로그인 사용자가 좋아요한 질문 목록. 인증: Required."""
-    data = await choice_service.list_my_liked_questions(current_user.id, db)
+    data = await choice_service.list_my_liked_questions(current_user.id, db, category=params.category,
+        sort=params.sort, search=params.q, limit=params.limit, cursor=params.cursor)
     return ApiResponse(success=True, data=data)

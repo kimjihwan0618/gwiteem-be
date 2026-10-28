@@ -1,6 +1,8 @@
 """일상 선택 질문과 투표 DB 접근."""
 
-from sqlalchemy import case, delete, func
+from datetime import datetime
+
+from sqlalchemy import and_, case, delete, func, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.future import select
 from sqlalchemy.orm import selectinload
@@ -9,9 +11,15 @@ from app.models.choice import ChoiceLike, ChoiceQuestion, ChoiceReason, ChoiceVo
 
 
 async def list_questions(
-    category: str | None,
+    category: list[str] | None,
     sort: str,
     db: AsyncSession,
+    *,
+    search: str = "",
+    limit: int = 15,
+    after: tuple[int, datetime, int] | None = None,
+    user_id: int | None = None,
+    scope: str = "all",
 ) -> list[tuple[ChoiceQuestion, int, int]]:
     vote_count = (
         select(func.count(ChoiceVote.id))
@@ -33,7 +41,28 @@ async def list_questions(
         .where(ChoiceQuestion.is_active.is_(True))
     )
     if category:
-        statement = statement.where(ChoiceQuestion.category == category)
+        statement = statement.where(ChoiceQuestion.category.in_(category))
+    if search:
+        statement = statement.where(ChoiceQuestion.title.icontains(search, autoescape=True))
+    if scope == "mine":
+        statement = statement.where(select(ChoiceVote.id).where(
+            ChoiceVote.question_id == ChoiceQuestion.id, ChoiceVote.user_id == user_id
+        ).exists())
+    elif scope == "liked":
+        statement = statement.where(select(ChoiceLike.id).where(
+            ChoiceLike.question_id == ChoiceQuestion.id, ChoiceLike.user_id == user_id
+        ).exists())
+    metric = vote_count if sort == "popular" else like_count if sort == "liked" else None
+    if after is not None:
+        count, published_at, question_id = after
+        date_filter = or_(
+            ChoiceQuestion.published_at < published_at,
+            and_(ChoiceQuestion.published_at == published_at, ChoiceQuestion.id < question_id),
+        )
+        statement = statement.where(
+            or_(metric < count, and_(metric == count, date_filter))
+            if metric is not None else date_filter
+        )
     if sort == "popular":
         statement = statement.order_by(
             vote_count.desc(),
@@ -51,7 +80,7 @@ async def list_questions(
             ChoiceQuestion.published_at.desc(),
             ChoiceQuestion.id.desc(),
         )
-    result = await db.execute(statement)
+    result = await db.execute(statement.limit(limit + 1))
     return [
         (question, int(participant_count), int(question_like_count))
         for question, participant_count, question_like_count in result.all()
@@ -94,13 +123,17 @@ async def list_votes_for_identity(
     user_id: int | None,
     guest_session_id: str,
     db: AsyncSession,
+    question_ids: list[int] | None = None,
 ) -> list[ChoiceVote]:
     identity_filter = (
         ChoiceVote.user_id == user_id
         if user_id is not None
         else ChoiceVote.guest_session_id == guest_session_id
     )
-    result = await db.execute(select(ChoiceVote).where(identity_filter))
+    result = await db.execute(select(ChoiceVote).where(
+        identity_filter,
+        ChoiceVote.question_id.in_(question_ids) if question_ids is not None else True,
+    ))
     return list(result.scalars().all())
 
 
@@ -151,7 +184,7 @@ async def create_vote(
     return vote
 
 
-async def list_user_votes(user_id: int, db: AsyncSession) -> list[ChoiceVote]:
+async def list_user_votes(user_id: int, db: AsyncSession, question_ids: list[int] | None = None) -> list[ChoiceVote]:
     result = await db.execute(
         select(ChoiceVote)
         .options(
@@ -159,7 +192,8 @@ async def list_user_votes(user_id: int, db: AsyncSession) -> list[ChoiceVote]:
             selectinload(ChoiceVote.question).selectinload(ChoiceQuestion.author),
             selectinload(ChoiceVote.reason),
         )
-        .where(ChoiceVote.user_id == user_id)
+        .where(ChoiceVote.user_id == user_id,
+               ChoiceVote.question_id.in_(question_ids) if question_ids is not None else True)
         .order_by(ChoiceVote.updated_at.desc())
     )
     return list(result.scalars().all())
@@ -169,10 +203,13 @@ async def delete_vote(vote_id: int, db: AsyncSession) -> None:
     await db.execute(delete(ChoiceVote).where(ChoiceVote.id == vote_id))
 
 
-async def list_liked_question_ids(user_id: int, db: AsyncSession) -> set[int]:
+async def list_liked_question_ids(user_id: int, db: AsyncSession, question_ids: list[int] | None = None) -> set[int]:
     """사용자가 좋아요한 질문 ID를 조회한다."""
     result = await db.execute(
-        select(ChoiceLike.question_id).where(ChoiceLike.user_id == user_id)
+        select(ChoiceLike.question_id).where(
+            ChoiceLike.user_id == user_id,
+            ChoiceLike.question_id.in_(question_ids) if question_ids is not None else True,
+        )
     )
     return set(result.scalars().all())
 
@@ -217,7 +254,7 @@ async def count_likes(question_id: int, db: AsyncSession) -> int:
     return int(result.scalar_one())
 
 
-async def list_user_likes(user_id: int, db: AsyncSession) -> list[ChoiceLike]:
+async def list_user_likes(user_id: int, db: AsyncSession, question_ids: list[int] | None = None) -> list[ChoiceLike]:
     """사용자가 좋아요한 질문을 최근 좋아요 순으로 조회한다."""
     result = await db.execute(
         select(ChoiceLike)
@@ -228,6 +265,7 @@ async def list_user_likes(user_id: int, db: AsyncSession) -> list[ChoiceLike]:
         .where(
             ChoiceLike.user_id == user_id,
             ChoiceQuestion.is_active.is_(True),
+            ChoiceLike.question_id.in_(question_ids) if question_ids is not None else True,
         )
         .order_by(ChoiceLike.created_at.desc())
     )

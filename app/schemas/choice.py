@@ -4,10 +4,21 @@ from datetime import datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
+from app.schemas.common import CursorPage
 
 
 ChoiceCategory = Literal["work", "spending", "relationship", "daily"]
 ChoiceOption = Literal["A", "B", "C", "D"]
+
+
+class QuestionListParams(BaseModel):
+    """질문 목록의 서버 검색과 페이지 크기 제한."""
+
+    category: list[ChoiceCategory] = Field(default_factory=list)
+    sort: Literal["popular", "latest", "liked"] = "popular"
+    q: str = Field(default="", max_length=200)
+    limit: int = Field(default=15, ge=1, le=15)
+    cursor: str | None = Field(default=None, max_length=2048)
 
 
 class ChoiceReasonItem(BaseModel):
@@ -34,8 +45,17 @@ class ChoiceQuestionItem(BaseModel):
     published_at: datetime
 
 
-class ChoiceQuestionsResponse(BaseModel):
-    items: list[ChoiceQuestionItem]
+class ChoiceQuestionsResponse(CursorPage[ChoiceQuestionItem]):
+    pass
+
+
+class QuestionCursor(BaseModel):
+    """정렬 조건과 마지막 항목을 담는 목록 커서."""
+
+    metric: int = Field(ge=0)
+    published_at: datetime
+    question_id: int = Field(ge=1)
+    filters: str
 
 
 class ChoiceReasonResult(BaseModel):

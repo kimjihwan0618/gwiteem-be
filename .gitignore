@@ -21,6 +21,7 @@ env/
 *.db
 *.sqlite
 *.sqlite3
+.database-backups/
 
 # ===== 테스트 / 커버리지 =====
 .pytest_cache/

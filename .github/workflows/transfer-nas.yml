@@ -20,7 +20,7 @@ jobs:
       run:
         shell: bash
     env:
-      NAS_PATH: /volume1/docker/gwiteem/product/be
+      NAS_PATH: /volume1/docker/gwiteem/BE
       ARCHIVE: gwiteem-be.tar.gz
       PYTHON_IMAGE: python:3.12-slim-bookworm
     steps:

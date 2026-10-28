@@ -1,5 +1,11 @@
 """일상 선택 질문과 투표 비즈니스 로직."""
 
+import base64
+import binascii
+import hashlib
+import json
+
+from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import InvalidRequestException, NotFoundException
@@ -17,7 +23,42 @@ from app.schemas.choice import (
     ChoiceVoteResponse,
     MyChoiceItem,
     MyLikedQuestionItem,
+    QuestionCursor,
 )
+from app.schemas.common import CursorPage
+
+
+async def _question_page(
+    category: list[str] | None, sort: str, user_id: int | None, db: AsyncSession,
+    search: str, limit: int, cursor: str | None, scope: str = "all",
+) -> tuple[list[tuple[ChoiceQuestion, int, int]], str | None]:
+    """필터에 결합된 커서로 필요한 질문만 조회한다."""
+    search = search.strip()
+    filters = hashlib.sha256(json.dumps(
+        [sorted(category or []), sort, search, user_id, scope], ensure_ascii=False
+    ).encode()).hexdigest()
+    after = None
+    if cursor:
+        try:
+            decoded = QuestionCursor.model_validate_json(base64.b64decode(
+                cursor.encode("ascii"), altchars=b"-_", validate=True
+            ))
+        except (ValueError, ValidationError, binascii.Error, UnicodeError):
+            raise InvalidRequestException("목록 커서가 올바르지 않습니다.") from None
+        if decoded.filters != filters or decoded.published_at.tzinfo is not None:
+            raise InvalidRequestException("검색 조건에 맞지 않는 목록 커서입니다.")
+        after = (decoded.metric, decoded.published_at, decoded.question_id)
+    rows = await choice_repo.list_questions(
+        category, sort, db, search=search, limit=limit, after=after,
+        user_id=user_id, scope=scope,
+    )
+    next_cursor = None
+    if len(rows) > limit:
+        question, votes, likes = rows[limit - 1]
+        token = QuestionCursor(metric=votes if sort == "popular" else likes if sort == "liked" else 0,
+                               published_at=question.published_at, question_id=question.id, filters=filters)
+        next_cursor = base64.urlsafe_b64encode(token.model_dump_json().encode()).decode()
+    return rows[:limit], next_cursor
 
 
 def _question_item(
@@ -49,22 +90,28 @@ def _question_item(
 
 
 async def list_questions(
-    category: str | None,
+    category: list[str] | None,
     sort: str,
     user_id: int | None,
     guest_session_id: str,
     db: AsyncSession,
+    *,
+    search: str = "",
+    limit: int = 15,
+    cursor: str | None = None,
 ) -> ChoiceQuestionsResponse:
-    questions = await choice_repo.list_questions(category, sort, db)
-    comment_counts = await comment_repo.counts([q.id for q, _, _ in questions], db)
-    votes = await choice_repo.list_votes_for_identity(user_id, guest_session_id, db)
+    questions, next_cursor = await _question_page(category, sort, user_id, db, search, limit, cursor)
+    question_ids = [q.id for q, _, _ in questions]
+    comment_counts = await comment_repo.counts(question_ids, db)
+    votes = await choice_repo.list_votes_for_identity(user_id, guest_session_id, db, question_ids)
     vote_by_question = {vote.question_id: vote for vote in votes}
     liked_question_ids = (
-        await choice_repo.list_liked_question_ids(user_id, db)
+        await choice_repo.list_liked_question_ids(user_id, db, question_ids)
         if user_id is not None
         else set()
     )
     return ChoiceQuestionsResponse(
+        next_cursor=next_cursor,
         items=[
             _question_item(
                 question,
@@ -205,19 +252,25 @@ async def migrate_guest_votes(
     return migrated_count
 
 
-async def list_my_choices(user_id: int, db: AsyncSession) -> list[MyChoiceItem]:
-    votes = await choice_repo.list_user_votes(user_id, db)
-    liked_question_ids = await choice_repo.list_liked_question_ids(user_id, db)
+async def list_my_choices(
+    user_id: int, db: AsyncSession, *, category: list[str] | None = None,
+    sort: str = "popular", search: str = "", limit: int = 15, cursor: str | None = None,
+) -> CursorPage[MyChoiceItem]:
+    rows, next_cursor = await _question_page(category, sort, user_id, db, search, limit, cursor, "mine")
+    question_ids = [q.id for q, _, _ in rows]
+    votes = await choice_repo.list_user_votes(user_id, db, question_ids)
+    votes.sort(key=lambda vote: question_ids.index(vote.question_id))
+    metrics = {q.id: (votes, likes) for q, votes, likes in rows}
+    liked_question_ids = await choice_repo.list_liked_question_ids(user_id, db, question_ids)
     comment_counts = await comment_repo.counts([vote.question_id for vote in votes], db)
     items: list[MyChoiceItem] = []
     for vote in votes:
-        option_counts = await choice_repo.count_votes(vote.question_id, db)
-        like_count = await choice_repo.count_likes(vote.question_id, db)
+        participant_count, like_count = metrics[vote.question_id]
         items.append(
             MyChoiceItem(
                 question=_question_item(
                     vote.question,
-                    sum(option_counts.values()),
+                    participant_count,
                     like_count,
                     vote.question_id in liked_question_ids,
                     vote,
@@ -228,7 +281,7 @@ async def list_my_choices(user_id: int, db: AsyncSession) -> list[MyChoiceItem]:
                 voted_at=vote.updated_at,
             )
         )
-    return items
+    return CursorPage(items=items, next_cursor=next_cursor)
 
 
 async def set_like(
@@ -259,21 +312,26 @@ async def set_like(
 async def list_my_liked_questions(
     user_id: int,
     db: AsyncSession,
-) -> list[MyLikedQuestionItem]:
+    *, category: list[str] | None = None, sort: str = "popular",
+    search: str = "", limit: int = 15, cursor: str | None = None,
+) -> CursorPage[MyLikedQuestionItem]:
     """로그인 사용자가 좋아요한 질문 목록을 반환한다."""
-    likes = await choice_repo.list_user_likes(user_id, db)
-    votes = await choice_repo.list_votes_for_identity(user_id, "", db)
+    rows, next_cursor = await _question_page(category, sort, user_id, db, search, limit, cursor, "liked")
+    question_ids = [q.id for q, _, _ in rows]
+    likes = await choice_repo.list_user_likes(user_id, db, question_ids)
+    likes.sort(key=lambda like: question_ids.index(like.question_id))
+    metrics = {q.id: (votes, likes) for q, votes, likes in rows}
+    votes = await choice_repo.list_votes_for_identity(user_id, "", db, question_ids)
     vote_by_question = {vote.question_id: vote for vote in votes}
     comment_counts = await comment_repo.counts([like.question_id for like in likes], db)
     items: list[MyLikedQuestionItem] = []
     for like in likes:
-        option_counts = await choice_repo.count_votes(like.question_id, db)
-        like_count = await choice_repo.count_likes(like.question_id, db)
+        participant_count, like_count = metrics[like.question_id]
         items.append(
             MyLikedQuestionItem(
                 question=_question_item(
                     like.question,
-                    sum(option_counts.values()),
+                    participant_count,
                     like_count,
                     True,
                     vote_by_question.get(like.question_id),
@@ -282,7 +340,7 @@ async def list_my_liked_questions(
                 liked_at=like.created_at,
             )
         )
-    return items
+    return CursorPage(items=items, next_cursor=next_cursor)
 
 
 def _question_options(question: ChoiceQuestion) -> list[tuple[str, str]]:
