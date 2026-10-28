@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import InvalidRequestException, NotFoundException
 from app.models.choice import ChoiceQuestion, ChoiceVote
-from app.repositories import choice_repo
+from app.repositories import choice_repo, comment_repo
 from app.schemas.choice import (
     ChoiceQuestionDetail,
     ChoiceQuestionItem,
@@ -26,6 +26,7 @@ def _question_item(
     like_count: int,
     is_liked: bool,
     vote: ChoiceVote | None,
+    comment_count: int,
 ) -> ChoiceQuestionItem:
     return ChoiceQuestionItem(
         id=question.id,
@@ -38,6 +39,7 @@ def _question_item(
         is_daily=question.is_daily,
         participant_count=participant_count,
         like_count=like_count,
+        comment_count=comment_count,
         is_liked=is_liked,
         my_choice=vote.selected_option if vote else None,
         author_name=question.author.nickname if question.author else "Gwiteem",
@@ -54,6 +56,7 @@ async def list_questions(
     db: AsyncSession,
 ) -> ChoiceQuestionsResponse:
     questions = await choice_repo.list_questions(category, sort, db)
+    comment_counts = await comment_repo.counts([q.id for q, _, _ in questions], db)
     votes = await choice_repo.list_votes_for_identity(user_id, guest_session_id, db)
     vote_by_question = {vote.question_id: vote for vote in votes}
     liked_question_ids = (
@@ -69,6 +72,7 @@ async def list_questions(
                 like_count,
                 question.id in liked_question_ids,
                 vote_by_question.get(question.id),
+                comment_counts.get(question.id, 0),
             )
             for question, participant_count, like_count in questions
         ]
@@ -112,7 +116,8 @@ async def _build_detail(
             ],
         )
     like_count = await choice_repo.count_likes(question.id, db)
-    item = _question_item(question, total_count, like_count, is_liked, vote)
+    comment_count = (await comment_repo.counts([question.id], db)).get(question.id, 0)
+    item = _question_item(question, total_count, like_count, is_liked, vote, comment_count)
     return ChoiceQuestionDetail(
         **item.model_dump(),
         reasons=[ChoiceReasonItem(id=reason.id, label=reason.label) for reason in question.reasons],
@@ -203,6 +208,7 @@ async def migrate_guest_votes(
 async def list_my_choices(user_id: int, db: AsyncSession) -> list[MyChoiceItem]:
     votes = await choice_repo.list_user_votes(user_id, db)
     liked_question_ids = await choice_repo.list_liked_question_ids(user_id, db)
+    comment_counts = await comment_repo.counts([vote.question_id for vote in votes], db)
     items: list[MyChoiceItem] = []
     for vote in votes:
         option_counts = await choice_repo.count_votes(vote.question_id, db)
@@ -215,6 +221,7 @@ async def list_my_choices(user_id: int, db: AsyncSession) -> list[MyChoiceItem]:
                     like_count,
                     vote.question_id in liked_question_ids,
                     vote,
+                    comment_counts.get(vote.question_id, 0),
                 ),
                 selected_option=vote.selected_option,
                 reason=ChoiceReasonItem(id=vote.reason.id, label=vote.reason.label),
@@ -257,6 +264,7 @@ async def list_my_liked_questions(
     likes = await choice_repo.list_user_likes(user_id, db)
     votes = await choice_repo.list_votes_for_identity(user_id, "", db)
     vote_by_question = {vote.question_id: vote for vote in votes}
+    comment_counts = await comment_repo.counts([like.question_id for like in likes], db)
     items: list[MyLikedQuestionItem] = []
     for like in likes:
         option_counts = await choice_repo.count_votes(like.question_id, db)
@@ -269,6 +277,7 @@ async def list_my_liked_questions(
                     like_count,
                     True,
                     vote_by_question.get(like.question_id),
+                    comment_counts.get(like.question_id, 0),
                 ),
                 liked_at=like.created_at,
             )

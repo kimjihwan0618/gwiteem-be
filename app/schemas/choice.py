@@ -26,6 +26,7 @@ class ChoiceQuestionItem(BaseModel):
     is_daily: bool
     participant_count: int
     like_count: int
+    comment_count: int
     is_liked: bool
     my_choice: ChoiceOption | None = None
     author_name: str

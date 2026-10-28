@@ -19,8 +19,10 @@ from app.schemas.choice import (
 )
 from app.schemas.common import ApiResponse
 from app.services import choice_service
+from app.routers.comment import router as comment_router
 
 router = APIRouter(prefix="/choices", tags=["choices"])
+router.include_router(comment_router)
 
 
 @router.get("/questions", response_model=ApiResponse[ChoiceQuestionsResponse])

@@ -5,6 +5,7 @@ app.models 패키지 import 한 번으로 전체 테이블을 인식할 수 있�
 """
 from app.models.choice import ChoiceLike, ChoiceQuestion, ChoiceReason, ChoiceVote  # noqa: F401
 from app.models.user import User  # noqa: F401
+from app.models.comment import ChoiceComment, ChoiceCommentLike, ChoiceReply  # noqa: F401
 
 __all__ = [
     "User",

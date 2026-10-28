@@ -28,4 +28,5 @@ redis==5.0.8
 # --- 개발/테스트 ---
 pytest==8.3.3
 pytest-asyncio==0.24.0
+aiosqlite==0.20.0  # 격리된 댓글 API 테스트용
 python-multipart==0.0.12
