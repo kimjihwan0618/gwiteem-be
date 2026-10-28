@@ -1,7 +1,7 @@
 # NAS 백엔드 실행 파일 배치
 
 `.github/workflows/transfer-nas.yml`은 `main` push 또는 Actions의 **Run workflow**로 실행합니다.
-`hodo_admin@kimjihodo.synology.me:22`에 접속해 `/volume1/docker/gwiteem/product/be`에 Python 앱과 설치된 의존성을 배치합니다.
+`hodo_admin@kimjihodo.synology.me:22`에 접속해 `/volume1/docker/gwiteem/BE`에 Python 앱과 설치된 의존성을 배치합니다.
 배치가 끝나면 이 경로를 Python 컨테이너의 `/app`에 마운트하고 Uvicorn 실행 명령으로 FastAPI 서버를 시작할 수 있습니다.
 Actions는 NAS의 컨테이너나 서버를 시작·재시작하거나 DB 마이그레이션을 실행하지 않습니다.
 
@@ -33,7 +33,7 @@ Synology 호환성을 위해 SCP의 기존 프로토콜(`-O`)을 사용합니다
 배치 결과는 다음과 같습니다. `.packages`와 `.transfers`는 숨김 디렉터리이므로 NAS 터미널에서 `ls -a`로 확인할 수 있습니다.
 
 ```text
-/volume1/docker/gwiteem/product/be/
+/volume1/docker/gwiteem/BE/
 ├── app/
 ├── .packages/
 ├── requirements.txt
@@ -62,15 +62,15 @@ NAS Container Manager 등에서 아래 값으로 컨테이너를 구성합니다
 | --- | --- |
 | 이미지 | `python:3.12-slim-bookworm` |
 | 플랫폼 | `linux/amd64` |
-| 호스트 경로 | `/volume1/docker/gwiteem/product/be` |
+| 호스트 경로 | `/volume1/docker/gwiteem/BE` |
 | 컨테이너 마운트 경로 | `/app` |
 | 작업 디렉터리 | `/app` |
-| 컨테이너 포트 | `8000` |
-| 실행 명령 | `python -m uvicorn app.main:app --host 0.0.0.0 --port 8000` |
+| 컨테이너 포트 | `5134` |
+| 실행 명령 | `python -m uvicorn app.main:app --host 0.0.0.0 --port 5134` |
 
 빌드 시 설치한 의존성에는 Linux용 바이너리가 포함됩니다. 실행 환경도 같은 Python 3.12·Debian Bookworm·amd64 조합을 사용합니다.
 ARM NAS라면 빌드와 실행 플랫폼을 함께 변경해야 합니다.
-호스트에서 사용할 포트를 컨테이너의 `8000`번 포트에 연결합니다.
+호스트에서 사용할 포트를 컨테이너의 `5134`번 포트에 연결합니다.
 컨테이너 사용자를 따로 지정하면 NAS 마운트 경로의 읽기·탐색 권한도 확인합니다.
 
 컨테이너 환경변수에는 다음 값을 설정합니다.
@@ -87,7 +87,7 @@ ARM NAS라면 빌드와 실행 플랫폼을 함께 변경해야 합니다.
 | `REDIS_URL` | 컨테이너에서 접근 가능한 Redis 접속 URL |
 | `JWT_SECRET_KEY` | 운영용 JWT 서명 비밀값 |
 
-`DATABASE_URL`, `REDIS_URL` 등 앱 설정은 NAS의 `/volume1/docker/gwiteem/product/be/.env`에 직접 준비해도 됩니다.
+`DATABASE_URL`, `REDIS_URL` 등 앱 설정은 NAS의 `/volume1/docker/gwiteem/BE/.env`에 직접 준비해도 됩니다.
 작업 디렉터리가 `/app`이면 앱이 이 파일을 읽으며, 컨테이너 환경변수가 같은 이름의 `.env` 값보다 우선합니다.
 `PYTHONPATH` 등 Python 실행 환경변수는 컨테이너 설정에 넣어야 합니다. 앱의 `.env`만으로 설정되지 않습니다.
 `.env`는 GitHub Actions에서 전송하지 않으며 재배치할 때 기존 파일을 보존합니다.
@@ -105,3 +105,12 @@ DB 스키마 준비와 마이그레이션은 별도 운영 단계이며 이 워�
 현재 로컬 환경에는 Docker가 없어 실제 Linux 컨테이너에서의 의존성 설치·import 검증은 GitHub Actions 실행에서 확인해야 합니다.
 Windows의 독립된 Python 3.12 환경에서는 의존성 설치, `pip check`, FastAPI import와 ORM 매핑 검증을 통과했습니다.
 Actions의 패키징 단계가 이를 검사하며, 실제 NAS 전송과 운영 DB 연결 여부는 해당 실행 결과와 운영 설정으로 확인합니다.
+
+운영 환경변수 파일을 명시하려면 다음 명령으로 실행합니다. 파일은 NAS에 직접 준비합니다.
+
+```bash
+python -m uvicorn app.main:app --host 0.0.0.0 --port 5134 --env-file /app/.env.production
+```
+
+FE 컨테이너의 `API_BASE_URL`은 `http://<백엔드_IP>:5134`로 지정합니다.
+NAS 외부 포트도 `5134`로 사용하려면 `5134:5134`로 연결합니다.

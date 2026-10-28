@@ -53,6 +53,11 @@ python -m pytest
 
 ## NAS 파일 배포
 
-GitHub Actions는 실행 소스와 Python 의존성을 NAS의 `/volume1/docker/gwiteem/product/be`에 배치합니다.
+운영 서버는 `python -m uvicorn app.main:app --host 0.0.0.0 --port 5134`로 실행합니다.
+Docker 이미지의 기본 실행 포트도 `5134`이며 포트를 `5134:5134`로 연결합니다.
+운영 환경변수 파일을 직접 읽으려면 실행 명령에 `--env-file /app/.env.production`을
+추가합니다. 개발용 실행 명령과 포트 `8000`은 그대로 사용합니다.
+
+GitHub Actions는 실행 소스와 Python 의존성을 NAS의 `/volume1/docker/gwiteem/BE`에 배치합니다.
 Python 컨테이너 마운트와 시작 명령은 [NAS 전송 안내](docs/nas-transfer.md)를 참고하세요.
 배포 과정에서 서버 실행이나 DB 마이그레이션은 수행하지 않습니다.
