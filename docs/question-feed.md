@@ -1,8 +1,9 @@
 # 질문 목록, 검색, 대댓글 API
 
 질문 목록은 서버에서 검색·카테고리·정렬 조건을 적용한 뒤 최대 15개를 반환한다.
-프론트엔드는 lodash.debounce로 입력이 멈춘 뒤 0.3초 후 조회하고, 목록 하단에
-도달하면 `next_cursor`로 다음 페이지를 불러온다. 한글 조합 중에는 검색을 보류한다.
+프론트엔드는 검색 아이콘 또는 Enter로 검색을 실행하며, 입력만으로는 조회하지 않는다.
+X 버튼은 입력값과 적용된 검색어를 초기화한다. 목록 하단에 도달하면 `next_cursor`로
+다음 페이지를 불러온다.
 
 다음 세 조회 API가 동일한 query parameter를 받는다.
 
@@ -10,13 +11,13 @@
 - `GET /api/v1/choices/me`: 로그인 사용자의 참여 기록
 - `GET /api/v1/choices/me/likes`: 로그인 사용자의 좋아요 기록
 
-| 파라미터 | 설명 |
-| --- | --- |
-| `limit` | 기본 15, 최대 15 |
-| `cursor` | 직전 응답의 `next_cursor`, 첫 요청은 생략 |
-| `q` | 질문 제목 부분 검색, 최대 200자. `%`, `_`도 문자 그대로 검색 |
-| `category` | `work`, `spending`, `relationship`, `daily`. 여러 개는 반복 전달 |
-| `sort` | `popular`(참여순, 기본), `liked`(좋아요순), `latest`(질문 게시 최신순) |
+| 파라미터   | 설명                                                                   |
+| ---------- | ---------------------------------------------------------------------- |
+| `limit`    | 기본 15, 최대 15                                                       |
+| `cursor`   | 직전 응답의 `next_cursor`, 첫 요청은 생략                              |
+| `q`        | 질문 제목 부분 검색, 최대 200자. `%`, `_`도 문자 그대로 검색           |
+| `category` | `work`, `spending`, `relationship`, `daily`. 여러 개는 반복 전달       |
+| `sort`     | `popular`(참여순, 기본), `liked`(좋아요순), `latest`(질문 게시 최신순) |
 
 ```text
 GET /api/v1/choices/questions?limit=15&q=출근&category=work&category=daily&sort=latest
