@@ -1,0 +1,15 @@
+# API 접근 로그 설정. 변경 후 서버 재시작 필요.
+level = "INFO"
+console_enabled = true
+file_enabled = true
+# 상대 경로는 BE 프로젝트 루트 기준. 운영에서는 영속 볼륨 경로 사용.
+file_path = "logs/api-access.log"
+# size: 용량 기준 / time: 시간 기준 (둘 중 하나)
+rotation = "size"
+max_bytes = 10485760
+backup_count = 14
+# time 모드: S, M, H, D, midnight, W0~W6
+when = "midnight"
+interval = 1
+# true: UTC 기준 롤링 / false: 서버 로컬 시간 기준
+utc = true

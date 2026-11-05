@@ -1,5 +1,5 @@
 """
-소셜 로그인(카카오/네이버/구글) OAuth 클라이언트.
+소셜 로그인(네이버/구글) OAuth 클라이언트.
 """
 import logging
 from urllib.parse import urlencode
@@ -22,14 +22,6 @@ def build_authorize_url(provider: str) -> str:
     """provider별 OAuth authorize URL 반환."""
     _assert_provider(provider)
 
-    # TODO(구현 필요): kakao email 미제공 이슈 해결 전까지 비활성화 (SUPPORTED_PROVIDERS에서도 제외됨)
-    # if provider == "kakao":
-    #     return (
-    #         "https://kauth.kakao.com/oauth/authorize"
-    #         f"?client_id={settings.KAKAO_CLIENT_ID}"
-    #         f"&redirect_uri={settings.KAKAO_REDIRECT_URI}"
-    #         "&response_type=code"
-    #     )
     if provider == "naver":
         return "https://nid.naver.com/oauth2.0/authorize?" + urlencode(
             {
@@ -55,18 +47,6 @@ async def exchange_code_for_token(provider: str, code: str, state: str | None) -
 
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
-        # TODO(구현 필요): kakao email 미제공 이슈 해결 전까지 비활성화 (SUPPORTED_PROVIDERS에서도 제외됨)
-        # if provider == "kakao":
-        #     resp = await client.post(
-        #         "https://kauth.kakao.com/oauth/token",
-        #         data={
-        #             "grant_type": "authorization_code",
-        #             "client_id": settings.KAKAO_CLIENT_ID,
-        #             "client_secret": settings.KAKAO_CLIENT_SECRET,
-        #             "redirect_uri": settings.KAKAO_REDIRECT_URI,
-        #             "code": code,
-        #         },
-        #     )
             if provider == "naver":
                 if not state:
                     raise InvalidRequestException(

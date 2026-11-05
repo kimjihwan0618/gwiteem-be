@@ -146,6 +146,23 @@ scripts/           # DB 초기화와 개발용 데이터 관리
 
 계층 의존 방향은 `routers → services → repositories → models`입니다. 요청과 인증 처리는 router, 서비스 규칙은 service, DB 접근은 repository에서 담당합니다.
 
+## API 요청 로그
+
+`/api/` 아래 요청은 콘솔과 롤링 파일에 다음 형식으로 한 줄씩 기록됩니다.
+
+```text
+2026-11-05 14:30:00, [public], POST, /api/v1/auth/login, success
+2026-11-05 14:30:01, [42], POST, /api/v1/choices/questions/1/like, success
+2026-11-05 14:30:02, [public], POST, /api/v1/auth/password/reset-code, failed
+```
+
+- 시간: 요청 시작 시각, 한국 시간(KST), 24시간 표기.
+- 사용자: Required/Optional 인증 의존성이 검증한 사용자 ID. 미인증·인증 실패·인증을 수행하지 않는 공개 API는 `public`입니다. 로그인 API 자체는 공개 요청이므로 성공해도 `public`입니다.
+- HTTP 메서드: GET, POST, PUT, PATCH, DELETE 등 실제 요청 메서드를 경로 앞에 기록합니다.
+- 경로: query string 없이 실제 요청 path만 기록합니다. 토큰·비밀번호·요청/응답 본문은 기록하지 않습니다.
+- 결과: HTTP 200~399는 `success`, 400 이상 또는 처리 중 예외는 `failed`입니다.
+- `/health`, 문서 및 WebSocket은 대상에서 제외합니다. Uvicorn 기본 접근 로그와는 별도이며, 컨테이너에서는 기존 로그 수집 방식으로 조회할 수 있습니다.
+
 ## 테스트
 
 ```bash
@@ -153,3 +170,30 @@ python -m pytest app/tests -q
 ```
 
 댓글·답글 권한과 좋아요, 페이지네이션·검색·정렬, 샘플 데이터의 일관성과 보존을 검증합니다. 테스트는 격리된 SQLite DB 등을 사용하며 필요한 패키지는 `requirements.txt`에 포함돼 있습니다.
+
+### 로그 라이브러리와 설정
+
+현재 단일 Uvicorn 프로세스 구조에 맞춰 Python 표준 `logging`을 사용합니다. Loguru의 별도 로거 연동이나 structlog의 구조화 이벤트 처리가 필요하지 않아 추가 의존성 없이 표준 롤링 핸들러를 채택했습니다. `QueueHandler` / `QueueListener`로 파일 I/O를 별도 스레드에서 처리하며 정상 종료 시 큐를 비우고 파일을 닫습니다.
+
+설정 파일은 `app/logging.toml`입니다. 다른 파일을 사용하려면 `.env` 또는 실행 환경에 `LOG_CONFIG_FILE=/app/config/logging.toml`을 설정합니다. 변경 후 서버를 재시작해야 합니다. 잘못된 설정이나 쓰기 불가능한 경로는 시작 시 오류로 표시됩니다.
+
+| 설정 | 기본값 | 의미 |
+|---|---|---|
+| `level` | `INFO` | DEBUG / INFO / WARNING / ERROR / CRITICAL |
+| `console_enabled` | `true` | stderr 출력 |
+| `file_enabled` | `true` | 파일 출력 |
+| `file_path` | `logs/api-access.log` | 절대 경로 또는 BE 루트 기준 상대 경로, 디렉터리 자동 생성 |
+| `rotation` | `size` | `size` 또는 `time` |
+| `max_bytes` | `10485760` | size 모드에서 약 10MiB마다 분리 |
+| `backup_count` | `14` | 활성 파일 외 백업 최대 14개, 롤링 시 오래된 파일 삭제 |
+| `when` | `midnight` | time 모드에서 S/M/H/D/midnight/W0~W6 |
+| `interval` | `1` | 시간 롤링 주기 |
+| `utc` | `true` | 시간 롤링 UTC 기준; false이면 서버 로컬 시간 |
+
+성공 요청은 INFO, HTTP 4xx는 WARNING, 5xx·예외는 ERROR 레벨입니다. `level = "WARNING"`이면 실패 요청만 남습니다. 출력 순서는 시간, 사용자, HTTP 메서드, 경로, 성공 여부입니다. 이 설정은 API 접근 로그 전용이며 Uvicorn 및 다른 애플리케이션 로그 정책은 바꾸지 않습니다.
+
+용량 모드는 `api-access.log.1`~`.14`, 시간 모드는 `api-access.log.날짜` 형식으로 보관합니다. 예를 들어 `rotation = "time"`, `when = "midnight"`, `interval = 1`이면 매일 경계 이후 첫 로그에서 롤링합니다. `backup_count`는 보관 일수가 아니라 파일 개수입니다. 로그에 찍히는 요청 시간은 계속 KST이며 UTC 자정 롤링은 KST 오전 9시에 해당합니다. 시간 모드에서는 `max_bytes`가 적용되지 않습니다.
+
+기본 로그 경로는 로컬에서 `<BE>/logs/api-access.log`, NAS의 `/app` 마운트 배포에서는 `/app/logs/api-access.log`입니다. 로그를 배포 파일과 분리하려면 영속 디렉터리를 `/var/log/gwiteem`에 마운트하고 `file_path = "/var/log/gwiteem/api-access.log"`로 설정하세요. 실제 NAS 마운트 변경은 별도로 적용해야 합니다. 기본 TOML은 `app` 디렉터리와 함께 배포 패키지에 포함됩니다.
+
+표준 롤링 파일은 단일 프로세스용입니다. 여러 worker/컨테이너가 동일 파일에 기록하도록 구성하지 마세요. 다중 프로세스로 확장할 때는 `file_enabled = false`와 콘솔 로그 수집기의 롤링을 사용하거나 프로세스별 독립 파일 경로로 분리해야 합니다. 기존 Uvicorn 접근 로그는 별도 출력되며 필요하면 실행 옵션 `--no-access-log`로 중복 접근 로그를 끌 수 있습니다.

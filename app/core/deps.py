@@ -51,6 +51,7 @@ def _extract_bearer_token(authorization: str | None) -> str | None:
 
 
 async def get_current_user(
+    request: Request,
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> User:
@@ -59,16 +60,21 @@ async def get_current_user(
     user = await _resolve_user_from_token(token, db)
     if user is None:
         raise UnauthorizedException(message="로그인이 필요한 기능입니다.")
+    request.state.access_log_user_id = user.id
     return user
 
 
 async def get_optional_user(
+    request: Request,
     authorization: str | None = Header(default=None),
     db: AsyncSession = Depends(get_db),
 ) -> User | None:
     """Optional Auth. 토큰이 없거나 유효하지 않으면 None (게스트로 처리)."""
     token = _extract_bearer_token(authorization)
-    return await _resolve_user_from_token(token, db)
+    user = await _resolve_user_from_token(token, db)
+    if user is not None:
+        request.state.access_log_user_id = user.id
+    return user
 
 
 def get_guest_session_id(
