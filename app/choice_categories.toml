@@ -1,0 +1,21 @@
+# 카테고리의 유일한 관리 지점. 배열 순서가 화면 표시 순서다.
+# 기존 질문의 코드는 변경/삭제하지 말고 enabled=false로 신규 등록만 중단한다.
+[[categories]]
+code = "work"
+label = "직장"
+enabled = true
+
+[[categories]]
+code = "spending"
+label = "소비"
+enabled = true
+
+[[categories]]
+code = "relationship"
+label = "관계"
+enabled = true
+
+[[categories]]
+code = "daily"
+label = "일상"
+enabled = true

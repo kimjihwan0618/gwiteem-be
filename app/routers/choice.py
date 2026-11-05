@@ -7,8 +7,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.deps import get_current_user, get_db, get_guest_session_id, get_optional_user
 from app.models.user import User
+from app.core.choice_categories import CATEGORIES, ChoiceCategoryItem
 from app.schemas.choice import (
     ChoiceQuestionDetail,
+    CreateQuestionRequest,
     ChoiceQuestionsResponse,
     ChoiceLikeResponse,
     ChoiceVoteMigrationResponse,
@@ -24,6 +26,22 @@ from app.routers.comment import router as comment_router
 
 router = APIRouter(prefix="/choices", tags=["choices"])
 router.include_router(comment_router)
+
+
+@router.get("/categories", response_model=ApiResponse[list[ChoiceCategoryItem]])
+async def list_categories() -> ApiResponse[list[ChoiceCategoryItem]]:
+    """화면 필터와 작성 폼에서 공유하는 카테고리 목록. 인증: Public."""
+    return ApiResponse(success=True, data=list(CATEGORIES))
+
+
+@router.post("/questions", response_model=ApiResponse[ChoiceQuestionDetail], status_code=201)
+async def create_question(
+    body: CreateQuestionRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[ChoiceQuestionDetail]:
+    """로그인 사용자의 질문 게시. 인증: Required."""
+    return ApiResponse(success=True, data=await choice_service.create_question(body, current_user.id, db))
 
 
 @router.get("/questions", response_model=ApiResponse[ChoiceQuestionsResponse])

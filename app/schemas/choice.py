@@ -1,14 +1,30 @@
 """일상 선택 질문 API 스키마."""
 
 from datetime import datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from app.core.choice_categories import ChoiceCategory, CreationCategory
 from app.schemas.common import CursorPage
 
 
-ChoiceCategory = Literal["work", "spending", "relationship", "daily"]
 ChoiceOption = Literal["A", "B", "C", "D"]
+
+
+class CreateQuestionRequest(BaseModel):
+    """작성자는 인증 사용자로 결정하고 운영 플래그는 입력받지 않는다."""
+    model_config = ConfigDict(extra="forbid")
+    category: CreationCategory
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=200)]
+    options: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=100)]] = Field(min_length=2, max_length=4)
+    reasons: list[Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]] = Field(min_length=2, max_length=6)
+
+    @field_validator("options", "reasons")
+    @classmethod
+    def unique_labels(cls, values: list[str]) -> list[str]:
+        if len({value.casefold() for value in values}) != len(values):
+            raise ValueError("중복된 항목을 입력할 수 없습니다.")
+        return values
 
 
 class QuestionListParams(BaseModel):
@@ -28,7 +44,8 @@ class ChoiceReasonItem(BaseModel):
 
 class ChoiceQuestionItem(BaseModel):
     id: int
-    category: ChoiceCategory
+    category: str
+    category_label: str
     title: str
     option_a: str
     option_b: str

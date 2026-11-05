@@ -270,3 +270,19 @@ async def list_user_likes(user_id: int, db: AsyncSession, question_ids: list[int
         .order_by(ChoiceLike.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+async def create_question(author_id: int, category: str, title: str, options: list[str], reasons: list[str], db: AsyncSession) -> ChoiceQuestion:
+    """질문과 이유를 같은 트랜잭션에 저장한다. commit은 서비스가 담당한다."""
+    question = ChoiceQuestion(
+        author_id=author_id, category=category, title=title,
+        option_a=options[0], option_b=options[1],
+        option_c=options[2] if len(options) > 2 else None,
+        option_d=options[3] if len(options) > 3 else None,
+        is_daily=False, is_active=True,
+        reasons=[ChoiceReason(label=label, sort_order=index) for index, label in enumerate(reasons)],
+    )
+    db.add(question)
+    await db.flush()
+    await db.refresh(question, attribute_names=["author", "reasons"])
+    return question

@@ -8,11 +8,13 @@ import json
 from pydantic import ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.choice_categories import category_label
 from app.core.exceptions import InvalidRequestException, NotFoundException
 from app.models.choice import ChoiceQuestion, ChoiceVote
 from app.repositories import choice_repo, comment_repo
 from app.schemas.choice import (
     ChoiceQuestionDetail,
+    CreateQuestionRequest,
     ChoiceQuestionItem,
     ChoiceQuestionsResponse,
     ChoiceLikeResponse,
@@ -72,6 +74,7 @@ def _question_item(
     return ChoiceQuestionItem(
         id=question.id,
         category=question.category,
+        category_label=category_label(question.category),
         title=question.title,
         option_a=question.option_a,
         option_b=question.option_b,
@@ -352,3 +355,15 @@ def _question_options(question: ChoiceQuestion) -> list[tuple[str, str]]:
         ("D", question.option_d),
     ]
     return [(option, label) for option, label in options if label is not None]
+
+
+async def create_question(body: CreateQuestionRequest, author_id: int, db: AsyncSession) -> ChoiceQuestionDetail:
+    """질문과 이유를 원자적으로 등록하고 게시된 상세를 반환한다."""
+    try:
+        question = await choice_repo.create_question(author_id, body.category, body.title, body.options, body.reasons, db)
+        detail = await _build_detail(question, None, False, db)
+        await db.commit()
+        return detail
+    except Exception:
+        await db.rollback()
+        raise
