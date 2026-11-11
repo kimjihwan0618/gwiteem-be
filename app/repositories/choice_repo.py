@@ -52,6 +52,8 @@ async def list_questions(
         statement = statement.where(select(ChoiceLike.id).where(
             ChoiceLike.question_id == ChoiceQuestion.id, ChoiceLike.user_id == user_id
         ).exists())
+    elif scope == "created":
+        statement = statement.where(ChoiceQuestion.author_id == user_id)
     metric = vote_count if sort == "popular" else like_count if sort == "liked" else None
     if after is not None:
         count, published_at, question_id = after

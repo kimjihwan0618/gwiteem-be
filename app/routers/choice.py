@@ -172,3 +172,17 @@ async def list_my_liked_questions(
     data = await choice_service.list_my_liked_questions(current_user.id, db, category=params.category,
         sort=params.sort, search=params.q, limit=params.limit, cursor=params.cursor)
     return ApiResponse(success=True, data=data)
+
+
+@router.get("/me/questions", response_model=ApiResponse[ChoiceQuestionsResponse])
+async def list_my_questions(
+    params: Annotated[QuestionListParams, Query()],
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse[ChoiceQuestionsResponse]:
+    """로그인 사용자가 작성한 활성 질문 목록. 인증: Required."""
+    data = await choice_service.list_questions(
+        params.category, params.sort, current_user.id, "", db,
+        search=params.q, limit=params.limit, cursor=params.cursor, scope="created",
+    )
+    return ApiResponse(success=True, data=data)

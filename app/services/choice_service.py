@@ -102,8 +102,9 @@ async def list_questions(
     search: str = "",
     limit: int = 15,
     cursor: str | None = None,
+    scope: str = "all",
 ) -> ChoiceQuestionsResponse:
-    questions, next_cursor = await _question_page(category, sort, user_id, db, search, limit, cursor)
+    questions, next_cursor = await _question_page(category, sort, user_id, db, search, limit, cursor, scope)
     question_ids = [q.id for q, _, _ in questions]
     comment_counts = await comment_repo.counts(question_ids, db)
     votes = await choice_repo.list_votes_for_identity(user_id, guest_session_id, db, question_ids)
